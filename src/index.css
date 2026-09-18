@@ -31,3 +31,14 @@ body {
     @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-rose-300 focus:ring-2 focus:ring-rose-100;
   }
 }
+
+/* 飘字：从小人两侧空白区浮出、上飘 60px、淡出，约 1.8s */
+.float-text {
+  animation: floatUp 1.8s ease-out forwards;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.9);
+}
+@keyframes floatUp {
+  0% { opacity: 0; transform: translateY(10px) scale(0.85) rotate(-3deg); }
+  15% { opacity: 1; transform: translateY(0) scale(1) rotate(0deg); }
+  100% { opacity: 0; transform: translateY(-60px) scale(1.02) rotate(3deg); }
+}

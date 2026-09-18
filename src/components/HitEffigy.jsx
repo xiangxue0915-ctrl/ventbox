@@ -25,13 +25,18 @@ const PROPS = [
   { id: 'balloon', name: '气球锤', icon: '🎈', dmg: 1 },
 ];
 
-// 部位：只用于识别「点了哪里」与伤痕锚点；命中特效直接用鼠标坐标
+// 部位：拆得更细，让台词与伤痕都贴合「实际打中的位置」，更有成就感
 const PARTS = {
-  head: { name: '头', anchors: [[80, 28], [71, 34], [89, 34], [80, 40]] },
+  backhead: { name: '后脑勺', anchors: [[80, 28], [73, 30], [87, 30]] },
   face: { name: '脸', anchors: [[71, 47], [89, 47], [80, 53], [71, 53], [89, 53]] },
+  nose: { name: '鼻梁', anchors: [[80, 50]] },
+  ear: { name: '耳朵', anchors: [[62, 46], [98, 46]] },
+  chest: { name: '胸口', anchors: [[70, 86], [90, 86], [80, 96]] },
   belly: { name: '肚子', anchors: [[70, 112], [90, 112], [80, 126], [67, 134], [93, 134]] },
   butt: { name: '屁股', anchors: [[58, 158], [102, 158], [58, 170], [102, 170], [80, 164]] },
+  thigh: { name: '大腿', anchors: [[64, 176], [96, 176], [58, 184], [102, 184]] },
   knee: { name: '膝盖', anchors: [[63, 166], [97, 166], [63, 175], [97, 175], [80, 182], [68, 186], [92, 186]] },
+  shin: { name: '小腿', anchors: [[66, 196], [94, 196], [70, 200], [90, 200]] },
   foot: { name: '脚', anchors: [[58, 200], [102, 200], [58, 208], [102, 208], [80, 205]] },
   arm: { name: '胳膊', anchors: [[40, 104], [120, 104], [30, 112], [130, 112], [46, 100], [114, 100]] },
 };
@@ -43,6 +48,45 @@ const RELIEF_LINES = [
   '打得好！继续！', '把它打服为止。', '深呼吸，你已经爽到了。',
 ];
 const CRY_WORDS = ['啊！', '哦…', '呜呜', '疼！', '饶命！', '我错了！'];
+
+// 飘字台词：第一人称（小人自己疼），绑「实际部位」+「实际道具」。随机组合不重复
+// 工具动作（每个道具 2~3 种说法）
+const PROP_ACTION = {
+  hammer: ['榔头狠狠砸下', '大锤抡圆了落下', '铁锤当头棒喝'],
+  needle: ['针猛地扎了进来', '银针精准刺入', '针尖顶了上来'],
+  knife: ['刀锋划了过去', '尖刀蹭了一下', '刀背拍在身上'],
+  gun: ['一枪正中要害', '子弹呼啸而来', '砰地挨了一下'],
+  slipper: ['拖鞋迎面糊上', '拖鞋啪地拍脸', '鞋底横扫过来'],
+  pan: ['平底锅横拍过来', '铁锅当头罩下', '锅底狠狠一磕'],
+  chain: ['铁链甩了过来', '锁链缠了上来', '铁链抽在身上'],
+  banana: ['香蕉皮精准滑铲', '香蕉皮啪地贴脸', '黄皮一个趔趄'],
+  chicken: ['橡胶鸡猛地啄来', '玩具鸡疯狂乱啄', '鸡嘴顶了过来'],
+  ice: ['冰块贴了上来', '寒冰啪地撞上', '冷块糊在身上'],
+  feather: ['羽毛轻轻拂过（奇痒）', '羽毛扫了一下（钻心的痒）', '毛尖撩了一下'],
+  balloon: ['气球锤弹了过来', '充气锤咚地砸下', '气球棒槌一顶'],
+};
+// 部位痛感（每个部位 3 种第一人称吐槽，对应伤痕实际显示的位置）
+const PART_PAIN = {
+  backhead: ['我的后脑勺在替我喊疼', '后脑勺一震，记忆开始断片', '我的后脑勺开了朵小花'],
+  face: ['我的脸瞬间肿成发面馒头', '脸上当场印出个五指山', '我的脸成了抽象派画作'],
+  nose: ['鼻梁发出清脆的咔嚓', '我的鼻子在抗议', '鼻血还没流先喊了冤'],
+  ear: ['耳朵里全是蜜蜂开会', '我的耳朵替我红了', '一耳朵下去世界静音三秒'],
+  chest: ['胸口像被敲了鼓', '我的胸膛在打拍子', '心脏隔着肋骨喊救命'],
+  belly: ['我的肚子被扎得漏水了', '肚子当场表演喷泉', '一击正中，肚子咕咕求救'],
+  butt: ['屁股替我记住了这一下', '我的屁股学会了发抖', '臀部在连夜写检讨书'],
+  thigh: ['大腿一根筋在跳迪斯科', '我的腿软成了面条', '大腿当场申请工伤'],
+  knee: ['膝盖在和地面打招呼', '我的膝盖想提前退休', '髌骨发出了投降信号'],
+  shin: ['小腿酸爽直冲天灵盖', '我的小腿在打哆嗦', '胫骨表示这锅它不背'],
+  foot: ['我的脚原地起飞三厘米', '脚趾头集体抗议', '脚底板在练咏春'],
+  arm: ['胳膊自己举起了白旗', '我的手臂在打颤', '肱二头肌当场辞职'],
+};
+function pickFlavor(prop, part) {
+  const acts = PROP_ACTION[prop] || ['一下打中'];
+  const pains = PART_PAIN[part] || ['我疼得直跳'];
+  const a = acts[Math.floor(Math.random() * acts.length)];
+  const p = pains[Math.floor(Math.random() * pains.length)];
+  return `哎哟！${a}，${p}`;
+}
 
 let audioCtx = null;
 function getAudioCtx() {
@@ -302,6 +346,8 @@ export default function HitEffigy({ room }) {
   const [combo, setCombo] = useState(0);
   const [cardImg, setCardImg] = useState('');
   const [hitFx, setHitFx] = useState(null); // { x, y, id }
+  const [floaters, setFloaters] = useState([]); // 飘字：{ id, text, side, top }
+  const floatTimerRef = useRef({});
   const [pose, setPose] = useState({});
   const lastHitRef = useRef(0);
   const poseTimerRef = useRef(null);
@@ -369,11 +415,17 @@ export default function HitEffigy({ room }) {
   function limbPose(part) {
     const R = (a) => (Math.random() - 0.5) * 2 * a;
     switch (part) {
-      case 'head': return { armL: R(0.6), armR: R(0.6) };
-      case 'face': return { armL: R(0.5), armR: R(0.5) };
+      case 'head':
+      case 'backhead': return { armL: R(0.6), armR: R(0.6) };
+      case 'face':
+      case 'nose':
+      case 'ear':
+      case 'chest': return { armL: R(0.5), armR: R(0.5) };
       case 'belly': return { armL: R(0.7) + 0.5, armR: R(0.7) - 0.5 };
       case 'butt': return { armL: R(0.4), armR: R(0.4) };
       case 'knee': return { legL: R(0.5), legR: R(0.5), armL: R(0.3) };
+      case 'thigh': return { legL: R(0.4), legR: R(0.4) };
+      case 'shin': return { legL: R(0.6), legR: R(0.6) };
       case 'foot': return { legL: R(0.6), legR: R(0.6) };
       case 'arm': return { armL: R(0.8), armR: R(0.8) };
       default: return {};
@@ -411,6 +463,11 @@ export default function HitEffigy({ room }) {
     const isCombo = now - lastHitRef.current < 900;
     lastHitRef.current = now;
     setCombo(isCombo ? (c) => c + 1 : 1);
+    // 飘字：第一人称痛感，随机左右飘出，连击可多条同屏叠飘
+    const fl = { id: now + Math.random(), text: pickFlavor(prop.id, part), side: Math.random() < 0.5 ? 'left' : 'right', top: 14 + Math.random() * 56 };
+    setFloaters((prev) => [...prev.slice(-3), fl]);
+    clearTimeout(floatTimerRef.current[fl.id]);
+    floatTimerRef.current[fl.id] = setTimeout(() => setFloaters((prev) => prev.filter((x) => x.id !== fl.id)), 1800);
     supabase.from('effigy_hits').insert({ room_code: room, target, part, prop: prop.id }).then(() => refresh());
   }
 
@@ -601,15 +658,21 @@ export default function HitEffigy({ room }) {
               {/* 打击点实时特效将移到 svg root 空间（见下方），此处仅闭合身体组 */}
             </g>
             {bubble && (<g><rect x="112" y="14" width="44" height="22" rx="8" fill="#fff" stroke="#fda4af" /><text x="134" y="29" textAnchor="middle" fontSize="13" fill="#e11d48" fontWeight="bold">{bubble}</text></g>)}
-            {/* 点击层：哪里点哪里，传真实鼠标坐标；瘫倒时整层跟随身体一起旋转，保证「点哪打哪」对得上 */}
+            {/* 点击层：把部位拆细，点哪打哪、台词与伤痕都对应实际位置 */}
             {target && (
               <g className="cursor-pointer" transform={st.down ? 'rotate(-18 80 120)' : ''}>
-                <circle cx="80" cy="45" r="28" fill="transparent" onClick={(e) => handleSvgClick(e, 'head')}><title>头</title></circle>
-                <circle cx="80" cy="52" r="16" fill="transparent" onClick={(e) => handleSvgClick(e, 'face')}><title>脸</title></circle>
-                <rect x="50" y="70" width="60" height="72" fill="transparent" onClick={(e) => handleSvgClick(e, 'belly')}><title>肚子</title></rect>
-                <rect x="50" y="142" width="60" height="36" fill="transparent" onClick={(e) => handleSvgClick(e, 'butt')}><title>屁股</title></rect>
-                <rect x="52" y="178" width="56" height="16" fill="transparent" onClick={(e) => handleSvgClick(e, 'knee')}><title>膝盖</title></rect>
-                <rect x="52" y="194" width="56" height="20" fill="transparent" onClick={(e) => handleSvgClick(e, 'foot')}><title>脚</title></rect>
+                <ellipse cx="80" cy="28" rx="18" ry="12" fill="transparent" onClick={(e) => handleSvgClick(e, 'backhead')}><title>后脑勺</title></ellipse>
+                <circle cx="80" cy="52" r="15" fill="transparent" onClick={(e) => handleSvgClick(e, 'face')}><title>脸</title></circle>
+                <circle cx="80" cy="50" r="5" fill="transparent" onClick={(e) => handleSvgClick(e, 'nose')}><title>鼻梁</title></circle>
+                <circle cx="62" cy="46" r="6" fill="transparent" onClick={(e) => handleSvgClick(e, 'ear')}><title>耳朵</title></circle>
+                <circle cx="98" cy="46" r="6" fill="transparent" onClick={(e) => handleSvgClick(e, 'ear')}><title>耳朵</title></circle>
+                <rect x="52" y="70" width="56" height="22" fill="transparent" onClick={(e) => handleSvgClick(e, 'chest')}><title>胸口</title></rect>
+                <rect x="52" y="92" width="56" height="44" fill="transparent" onClick={(e) => handleSvgClick(e, 'belly')}><title>肚子</title></rect>
+                <rect x="52" y="136" width="56" height="34" fill="transparent" onClick={(e) => handleSvgClick(e, 'butt')}><title>屁股</title></rect>
+                <rect x="52" y="170" width="56" height="12" fill="transparent" onClick={(e) => handleSvgClick(e, 'thigh')}><title>大腿</title></rect>
+                <rect x="52" y="182" width="56" height="12" fill="transparent" onClick={(e) => handleSvgClick(e, 'knee')}><title>膝盖</title></rect>
+                <rect x="52" y="194" width="56" height="14" fill="transparent" onClick={(e) => handleSvgClick(e, 'shin')}><title>小腿</title></rect>
+                <rect x="52" y="208" width="56" height="12" fill="transparent" onClick={(e) => handleSvgClick(e, 'foot')}><title>脚</title></rect>
                 {/* 手臂热区：不加则点胳膊完全无反应，违背「点哪打哪」 */}
                 <line x1="52" y1="92" x2="26" y2="116" stroke="transparent" strokeWidth="16" strokeLinecap="round" onClick={(e) => handleSvgClick(e, 'arm')}><title>手臂</title></line>
                 <line x1="108" y1="92" x2="134" y2="116" stroke="transparent" strokeWidth="16" strokeLinecap="round" onClick={(e) => handleSvgClick(e, 'arm')}><title>手臂</title></line>
@@ -641,6 +704,13 @@ export default function HitEffigy({ room }) {
               </div>
             </div>
           </div>
+
+          {/* 飘字：在小人两侧空白区随机浮出，第一人称痛感 */}
+          {floaters.map((f) => (
+            <div key={f.id} className={`pointer-events-none absolute z-20 ${f.side === 'left' ? 'left-3 sm:left-10' : 'right-3 sm:right-10'}`} style={{ top: f.top + '%' }}>
+              <span className="float-text block max-w-[150px] text-center text-sm font-bold text-rose-500 leading-snug">{f.text}</span>
+            </div>
+          ))}
 
           {/* 状态 + 出手按钮：同一行，保证 100% 缩放下按钮完整可见 */}
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-slate-100 pt-2">
