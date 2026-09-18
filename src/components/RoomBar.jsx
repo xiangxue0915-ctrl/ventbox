@@ -84,7 +84,18 @@ export default function RoomBar({ room, onChange }) {
   const inviteLink = `${window.location.origin}${window.location.pathname}?room=${room}`;
 
   return (
-    <div className="relative shrink-0" ref={boxRef}>
+    <div className="flex items-center gap-2 shrink-0">
+      {/* 一键分享：复制当前房间的邀请链接（点开即进同一房间） */}
+      <button
+        onClick={() => copyText(inviteLink, '邀请链接已复制，发给同事吧')}
+        title="复制本房间邀请链接，发给同事即可一起玩"
+        className="hidden sm:flex items-center gap-1.5 px-3 h-9 rounded-full bg-white hover:bg-rose-50 border border-rose-100 text-slate-600 text-sm font-semibold transition"
+      >
+        <span>🔗</span>
+        <span className="hidden lg:inline opacity-70 font-normal">复制链接</span>
+      </button>
+
+      <div className="relative shrink-0" ref={boxRef}>
       {/* 房间胶囊 */}
       <button
         onClick={() => setOpen((v) => !v)}
@@ -159,6 +170,7 @@ export default function RoomBar({ room, onChange }) {
           {toast}
         </div>
       )}
+      </div>
     </div>
   );
 }
