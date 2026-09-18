@@ -1,0 +1,13 @@
+# 依赖与构建产物（Vercel 会自己构建）
+node_modules/
+dist/
+
+# 本机调试与 QA 产物（不上传公网仓库）
+dev/
+build.log
+qa-*.png
+qa-shot-*.png
+
+# 部署工具缓存
+.vercel/
+*.local
