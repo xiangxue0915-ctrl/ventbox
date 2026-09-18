@@ -287,8 +287,11 @@ function statusOf(total) {
 export default function HitEffigy({ room }) {
   const [rows, setRows] = useState([]);
   const [loaded, setLoaded] = useState(false);
-  const [localHits, setLocalHits] = useState(() => get(HITS_KEY, {}));
-  const [localDetail, setLocalDetail] = useState(() => get(DETAIL_KEY, {}));
+  // 离线回退缓存按房间隔离：不同房间的对象与伤痕互不串
+  const [localHits, setLocalHits] = useState({});
+  const [localDetail, setLocalDetail] = useState({});
+  const hitsKey = HITS_KEY + ':' + room;
+  const detailKey = DETAIL_KEY + ':' + room;
   const [inputName, setInputName] = useState('');
   const [target, setTarget] = useState('');
   const [activeProp, setActiveProp] = useState(PROPS[0].id);
@@ -309,7 +312,17 @@ export default function HitEffigy({ room }) {
     let alive = true;
     async function load() {
       const { data, error } = await supabase.from('effigy_hits').select('*').eq('room_code', room);
-      if (alive) { if (!error) setRows(data || []); setLoaded(true); }
+      if (alive) {
+        if (!error) {
+          setRows(data || []);
+          // 进入已有记录的房间时自动选中第一个对象，免得白屏要重新贴名
+          if (data && data.length) {
+            const first = Object.keys(aggregate(data))[0];
+            setTarget((t) => t || first);
+          }
+        }
+        setLoaded(true);
+      }
     }
     load();
     const ch = supabase
@@ -317,6 +330,14 @@ export default function HitEffigy({ room }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'effigy_hits', filter: `room_code=eq.${room}` }, () => refresh())
       .subscribe();
     return () => { alive = false; supabase.removeChannel(ch); };
+    // eslint-disable-next-line
+  }, [room]);
+
+  // 切换房间：清空上个房间的对象与一切临时表现（名字、伤痕视图、特效），杜绝串房
+  useEffect(() => {
+    setLocalHits(get(hitsKey, {}));
+    setLocalDetail(get(detailKey, {}));
+    setTarget(''); setRelief(''); setMouth(null); setBubble(''); setCardImg(''); setHitFx(null); setPose({});
     // eslint-disable-next-line
   }, [room]);
 
@@ -371,7 +392,7 @@ export default function HitEffigy({ room }) {
     const nextPP = { ...curD.pp, [k]: (curD.pp[k] || 0) + 1 };
     const nextDetail = { ...localDetail, [target]: { parts: nextParts, pp: nextPP } };
     setLocalHits(nextHits); setLocalDetail(nextDetail);
-    set(HITS_KEY, nextHits); set(DETAIL_KEY, nextDetail);
+    set(hitsKey, nextHits); set(detailKey, nextDetail);
     // 表现层
     playSmack(prop.dmg);
     const m = ['啊', '哦', '呜'][Math.floor(Math.random() * 3)];
@@ -416,7 +437,7 @@ export default function HitEffigy({ room }) {
     if (!target) return;
     const nh = { ...localHits }; const nd = { ...localDetail };
     delete nh[target]; delete nd[target];
-    setLocalHits(nh); setLocalDetail(nd); set(HITS_KEY, nh); set(DETAIL_KEY, nd);
+    setLocalHits(nh); setLocalDetail(nd); set(hitsKey, nh); set(detailKey, nd);
     await supabase.from('effigy_hits').delete().eq('room_code', room).eq('target', target);
     setRows([]); setLoaded(false); refresh().then(() => setLoaded(true));
     setTarget(''); setRelief(''); setCardImg('');
@@ -424,7 +445,7 @@ export default function HitEffigy({ room }) {
 
   async function clearAll() {
     if (!window.confirm('确定清空本房间所有打击记录？')) return;
-    setLocalHits({}); setLocalDetail({}); set(HITS_KEY, {}); set(DETAIL_KEY, {});
+    setLocalHits({}); setLocalDetail({}); set(hitsKey, {}); set(detailKey, {});
     await supabase.from('effigy_hits').delete().eq('room_code', room);
     setRows([]); setTarget(''); setRelief(''); setCardImg('');
   }
