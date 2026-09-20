@@ -33,6 +33,18 @@ export default function RoomBar({ room, onChange }) {
   });
   const [toast, setToast] = useState('');
   const boxRef = useRef(null);
+  // 首次进房引导：提示把链接发给同事一起玩（每台浏览器只提示一次）
+  const [firstHint, setFirstHint] = useState(() => {
+    try { return !window.localStorage.getItem('ventbox:invite_hint_seen'); } catch { return false; }
+  });
+  useEffect(() => {
+    if (!firstHint) return;
+    const t = setTimeout(() => {
+      setFirstHint(false);
+      try { window.localStorage.setItem('ventbox:invite_hint_seen', '1'); } catch {}
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [firstHint]);
   const counts = useRoomCounts(list);
 
   // 确保当前房间在列表里
@@ -81,7 +93,7 @@ export default function RoomBar({ room, onChange }) {
   function copyText(text, msg) {
     navigator.clipboard?.writeText(text).then(() => flash(msg));
   }
-  const inviteLink = `${window.location.origin}${window.location.pathname}?room=${room}`;
+  const inviteLink = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(room)}`;
 
   return (
     <div className="flex items-center gap-2 shrink-0">
@@ -109,6 +121,17 @@ export default function RoomBar({ room, onChange }) {
         <span className={open ? 'tracking-wider' : 'tracking-wider text-rose-500'}>{room}</span>
         <span className="text-xs opacity-60">{open ? '▲' : '▼'}</span>
       </button>
+
+      {/* 首次进房引导：提示把链接发给同事（弹层关闭时显示） */}
+      {firstHint && !open && (
+        <div className="absolute right-0 top-11 mt-1 w-72 max-w-[calc(100vw-2rem)] bg-slate-800 text-white text-xs rounded-xl shadow-xl p-3 z-50 animate-pop">
+          <p className="leading-relaxed">💡 想和朋友一起吐槽？点上方 <span className="text-rose-300 font-semibold">🔗 复制链接</span>，发给他们就能进同一个房间一起打！</p>
+          <button
+            className="mt-2 w-full text-[11px] py-1 rounded-lg bg-white/10 hover:bg-white/20 transition"
+            onClick={() => { setFirstHint(false); try { window.localStorage.setItem('ventbox:invite_hint_seen', '1'); } catch {} }}
+          >知道了</button>
+        </div>
+      )}
 
       {/* 弹层 */}
       {open && (

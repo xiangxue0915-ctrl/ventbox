@@ -247,6 +247,47 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
 }
 
+// 道具痕迹在 SVG 上的形状（主舞台与通缉墙缩略图共用，保证上下一致）
+function markShape(m, i) {
+  switch (m.prop) {
+    case 'hammer': return <circle key={i} cx={m.x} cy={m.y} r={5} fill="#e11d48" opacity="0.75" />;
+    case 'needle': return <circle key={i} cx={m.x} cy={m.y} r={1.6} fill="#7f1d1d" />;
+    case 'knife': return <line key={i} x1={m.x - 5} y1={m.y - 4} x2={m.x + 5} y2={m.y + 4} stroke="#b91c1c" strokeWidth="2" />;
+    case 'gun': return (<g key={i}><circle cx={m.x} cy={m.y} r={4} fill="#1f2937" /><circle cx={m.x} cy={m.y} r={6.5} fill="none" stroke="#ef4444" strokeWidth="1.5" /></g>);
+    case 'slipper': return <ellipse key={i} cx={m.x} cy={m.y} rx={6} ry={4} fill="#ca8a04" opacity="0.7" />;
+    case 'pan': return <circle key={i} cx={m.x} cy={m.y} r={6} fill="#6b7280" opacity="0.7" />;
+    case 'chain': return (<g key={i} stroke="#475569" strokeWidth="1.8" fill="none">
+      <circle cx={m.x - 3.5} cy={m.y - 2} r="2.4" /><circle cx={m.x} cy={m.y} r="2.4" /><circle cx={m.x + 3.5} cy={m.y + 2} r="2.4" /></g>);
+    case 'banana': return <ellipse key={i} cx={m.x} cy={m.y} rx={5.5} ry={3} fill="#eab308" opacity="0.85" transform={`rotate(34 ${m.x} ${m.y})`} />;
+    case 'chicken': return (<g key={i}><circle cx={m.x} cy={m.y} r={4.5} fill="#dc2626" /><line x1={m.x - 5} y1={m.y} x2={m.x + 5} y2={m.y} stroke="#991b1b" strokeWidth="1.2" /></g>);
+    case 'ice': return <circle key={i} cx={m.x} cy={m.y} r={5} fill="#60a5fa" opacity="0.55" />;
+    case 'feather': return <path key={i} d={`M${m.x - 4} ${m.y + 3} Q${m.x} ${m.y - 4} ${m.x + 4} ${m.y - 2}`} stroke="#94a3b8" strokeWidth="1.4" fill="none" />;
+    case 'balloon': return <circle key={i} cx={m.x} cy={m.y} r={5} fill="#f472b6" opacity="0.7" />;
+    default: return null;
+  }
+}
+
+// 通缉墙：本房间每个对象一张「通缉照」缩略图，点击切换上台
+function MiniEffigy({ target, total, marks, active, onClick }) {
+  return (
+    <button onClick={onClick}
+      className={`relative flex flex-col items-center rounded-xl border p-1.5 transition ${active ? 'border-rose-400 bg-rose-50 ring-2 ring-rose-200' : 'border-slate-200 bg-white hover:border-rose-300'}`}>
+      <svg viewBox="0 0 160 220" width="66" height="90" className="select-none">
+        <rect x="50" y="70" width="60" height="110" rx="14" fill={marks.bodyFill} stroke="#e7d8a8" strokeWidth="2" />
+        <circle cx="80" cy="45" r="28" fill={marks.bodyFill} stroke="#e7d8a8" strokeWidth="2" />
+        <circle cx="71" cy="42" r="3" fill="#b08968" /><circle cx="89" cy="42" r="3" fill="#b08968" />
+        <path d="M70 54 Q80 60 90 54" stroke="#b08968" strokeWidth="2" fill="none" />
+        {target && (<g><rect x="52" y="105" width="56" height="26" rx="6" fill="#fff1f2" stroke="#fda4af" strokeWidth="1.5" />
+          <text x="80" y="122" textAnchor="middle" fontSize="13" fill="#e11d48" fontWeight="bold">{target.length > 4 ? target.slice(0, 4) + '…' : target}</text></g>)}
+        {marks.bruises.map((b, i) => (<circle key={i} cx={b.x} cy={b.y} r={b.r} fill="#a855f7" opacity="0.32" />))}
+        {marks.marks.map((m, i) => markShape(m, i))}
+      </svg>
+      <span className="mt-0.5 text-[11px] font-semibold text-slate-700 truncate max-w-[64px]">{target}</span>
+      <span className="text-[11px] text-rose-500 font-bold">{total} 下</span>
+    </button>
+  );
+}
+
 // 在 canvas 上绘制纸人（含四肢摆动 pose、伤痕、吐血、眼泪、绷带、X眼、封条）
 function drawEffigy(ctx, { target, total, marks, mouth, down, crying, pose = {} }) {
   const s = CARD.scale, ox = CARD.ox, oy = CARD.oy;
@@ -558,25 +599,6 @@ export default function HitEffigy({ room }) {
     setCardImg(cv.toDataURL('image/png'));
   }
 
-  const markShape = (m, i) => {
-    switch (m.prop) {
-      case 'hammer': return <circle key={i} cx={m.x} cy={m.y} r={5} fill="#e11d48" opacity="0.75" />;
-      case 'needle': return <circle key={i} cx={m.x} cy={m.y} r={1.6} fill="#7f1d1d" />;
-      case 'knife': return <line key={i} x1={m.x - 5} y1={m.y - 4} x2={m.x + 5} y2={m.y + 4} stroke="#b91c1c" strokeWidth="2" />;
-      case 'gun': return (<g key={i}><circle cx={m.x} cy={m.y} r={4} fill="#1f2937" /><circle cx={m.x} cy={m.y} r={6.5} fill="none" stroke="#ef4444" strokeWidth="1.5" /></g>);
-      case 'slipper': return <ellipse key={i} cx={m.x} cy={m.y} rx={6} ry={4} fill="#ca8a04" opacity="0.7" />;
-      case 'pan': return <circle key={i} cx={m.x} cy={m.y} r={6} fill="#6b7280" opacity="0.7" />;
-      case 'chain': return (<g key={i} stroke="#475569" strokeWidth="1.8" fill="none">
-        <circle cx={m.x - 3.5} cy={m.y - 2} r="2.4" /><circle cx={m.x} cy={m.y} r="2.4" /><circle cx={m.x + 3.5} cy={m.y + 2} r="2.4" /></g>);
-      case 'banana': return <ellipse key={i} cx={m.x} cy={m.y} rx={5.5} ry={3} fill="#eab308" opacity="0.85" transform={`rotate(34 ${m.x} ${m.y})`} />;
-      case 'chicken': return (<g key={i}><circle cx={m.x} cy={m.y} r={4.5} fill="#dc2626" /><line x1={m.x - 5} y1={m.y} x2={m.x + 5} y2={m.y} stroke="#991b1b" strokeWidth="1.2" /></g>);
-      case 'ice': return <circle key={i} cx={m.x} cy={m.y} r={5} fill="#60a5fa" opacity="0.55" />;
-      case 'feather': return <path key={i} d={`M${m.x - 4} ${m.y + 3} Q${m.x} ${m.y - 4} ${m.x + 4} ${m.y - 2}`} stroke="#94a3b8" strokeWidth="1.4" fill="none" />;
-      case 'balloon': return <circle key={i} cx={m.x} cy={m.y} r={5} fill="#f472b6" opacity="0.7" />;
-      default: return null;
-    }
-  };
-
   const mouthShape =
     mouth === '啊' ? <ellipse cx="80" cy="56" rx="7" ry="9" fill="#7f1d1d" /> :
     mouth === '哦' ? <ellipse cx="80" cy="55" rx="5" ry="4" fill="#7f1d1d" /> :
@@ -609,6 +631,7 @@ export default function HitEffigy({ room }) {
               value={inputName} onChange={(e) => setInputName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && pasteName()} />
             <button className="btn-ghost shrink-0" onClick={pasteName}>贴上去</button>
           </div>
+          {nameHint && (<p className="text-xs text-rose-500 mt-1.5 animate-pop">💡 {nameHint}</p>)}
 
           <div className="flex flex-wrap gap-2 mt-3">
             {PROPS.map((p) => (
@@ -759,6 +782,21 @@ export default function HitEffigy({ room }) {
         <p className="text-xs text-slate-400 mt-1">战果图与上方画面伤痕、吐血、姿势、道具统计完全一致</p>
       </div>)}
 
+      {/* 通缉墙：本房间所有对象的缩略「通缉照」，点任意一张即可切换上台 */}
+      {names.length > 0 && (
+        <div className="card mb-4">
+          <h3 className="font-semibold text-slate-700 mb-2">🚨 通缉墙（本房间 {names.length} 人）</h3>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+            {names.map((n) => {
+              const info = infoFor(n);
+              const m = buildMarks(n, info.total, info.detail);
+              return <MiniEffigy key={n} target={n} total={info.total} marks={m} active={n === target} onClick={() => switchTarget(n)} />;
+            })}
+          </div>
+          <p className="text-[11px] text-slate-400 mt-2">点任意一张「通缉照」就能把 Ta 请上台挨打；当前台上的人有高亮边框</p>
+        </div>
+      )}
+
       <div className="card">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-slate-700">📋 打击对象榜（本房间）</h3>
@@ -767,13 +805,18 @@ export default function HitEffigy({ room }) {
             {names.length > 0 && <button className="text-xs text-slate-400 hover:text-rose-500" onClick={clearAll}>清空全部</button>}
           </div>
         </div>
+        <p className="text-[11px] text-rose-400 mb-2">👆 点任意名字即可切换上台挨打，原对象仍保留在榜上</p>
         {names.length === 0 ? (<p className="text-sm text-slate-400">还没有打过任何人。</p>) : (
           <ul className="space-y-1">
             {names.map((n) => {
               const info = infoFor(n);
+              const isActive = n === target;
               return (<li key={n}><button
-                className={`w-full text-left text-sm px-3 py-2 rounded-lg flex justify-between ${n === target ? 'bg-rose-50 text-rose-600 font-semibold' : 'hover:bg-slate-50 text-slate-600'}`}
-                onClick={() => switchTarget(n)}><span>{n}</span><span>{info.total} 下</span></button></li>);
+                className={`w-full text-left text-sm px-3 py-2 rounded-lg flex justify-between items-center ${isActive ? 'bg-rose-50 text-rose-600 font-semibold ring-1 ring-rose-200' : 'hover:bg-slate-50 text-slate-600'}`}
+                onClick={() => switchTarget(n)}>
+                <span className="flex items-center gap-1.5 min-w-0"><span className="truncate">{n}</span>{isActive && <span className="text-[10px] bg-rose-500 text-white rounded px-1 py-0.5 shrink-0">台上</span>}</span>
+                <span className="shrink-0">{info.total} 下</span>
+              </button></li>);
             })}
           </ul>
         )}

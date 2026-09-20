@@ -2,8 +2,18 @@
 const LIST_KEY = 'ventbox:room_list';
 const CUR_KEY = 'ventbox:room';
 
+// 易读、好口口相传的中文/拼音房间名（替代难记的 6 位乱码）
+const ROOM_WORDS = [
+  '摸鱼屋', '老板别跑', '周一晨会', '甩锅侠', '背锅王', '画饼厂', '996小屋', '摸鱼基地',
+  '团建地狱', '摸鱼大队', '加班狗窝', '甩锅现场', '画饼局', '汇报表演', '摸鱼星球', '摸鱼茶室',
+  '离谱老板', '暴躁甲方', '画饼大师', '背锅小队', '带薪摸鱼', '续命咖啡', '摸鱼小组', '吐槽公社',
+  '快乐摸鱼', '解压小屋', '暴走职场', '离职边缘', '摸鱼茶馆', '画饼车间', '甩锅联盟', '背锅驿站',
+  '摸鱼营地', '续命工位', '吐槽小队', '摸鱼据点', '解压基地', '暴富幻想', '带薪发呆', '摸鱼广场',
+  '摸鱼茶馆', '八卦小屋', '怨气回收站', '摸鱼便利店', '老板画饼铺', '背锅互助组', '摸鱼研究院', '吐槽收容所',
+];
+
 export function genRoomCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
+  return ROOM_WORDS[Math.floor(Math.random() * ROOM_WORDS.length)];
 }
 
 export function getRoomList() {
