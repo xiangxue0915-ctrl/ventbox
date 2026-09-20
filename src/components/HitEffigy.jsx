@@ -464,6 +464,8 @@ export default function HitEffigy({ room }) {
     const n = inputName.trim();
     if (!n) return;
     setTarget(n); setInputName(''); setRelief(''); setMouth(null); setBubble(''); setCardImg(''); setHitFx(null);
+    setNameHint(`已切到「${n}」，原对象仍在下方通缉墙 / 打击榜`);
+    setTimeout(() => setNameHint(''), 2600);
   }
 
   // 触发对应部位的挥动/踢腿动画
