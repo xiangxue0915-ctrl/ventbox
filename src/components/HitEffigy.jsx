@@ -444,8 +444,12 @@ export default function HitEffigy({ room }) {
   }, [room]);
 
   async function refresh() {
+    const key = await getRoomKey(room);
     const { data, error } = await supabase.from('effigy_hits').select('*').eq('room_code', room);
-    if (!error) setRows(data || []);
+    if (!error && data) {
+      const dec = await Promise.all(data.map(async (r) => ({ ...r, target: await decryptText(key, r.target) })));
+      setRows(dec);
+    }
   }
 
   const shared = loaded ? aggregate(rows) : null;
@@ -492,7 +496,7 @@ export default function HitEffigy({ room }) {
   }
 
   // 依据「点击部位」推断：用鼠标实际坐标定位特效（100% 对得上）
-  function doHit(part, fx) {
+  async function doHit(part, fx) {
     if (!target) return;
     const prop = PROPS.find((x) => x.id === activeProp) || PROPS[0];
     // 离线乐观更新
@@ -527,7 +531,8 @@ export default function HitEffigy({ room }) {
     setFloaters((prev) => [...prev.slice(-3), fl]);
     clearTimeout(floatTimerRef.current[fl.id]);
     floatTimerRef.current[fl.id] = setTimeout(() => setFloaters((prev) => prev.filter((x) => x.id !== fl.id)), 1800);
-    supabase.from('effigy_hits').insert({ room_code: room, target, part, prop: prop.id }).then(() => refresh());
+    const encTarget = await encryptText(await getRoomKey(room), target);
+    supabase.from('effigy_hits').insert({ room_code: room, target: encTarget, part, prop: prop.id }).then(() => refresh());
   }
 
   // 把鼠标事件坐标换算成 SVG viewBox 坐标（保证「点哪打哪」）

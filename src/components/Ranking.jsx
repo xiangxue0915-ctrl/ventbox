@@ -36,12 +36,14 @@ export default function Ranking({ room }) {
   useEffect(() => {
     let alive = true;
     async function load() {
+      const key = await getRoomKey(room);
       const [{ data: posts, error: e1 }, { data: hits, error: e2 }] = await Promise.all([
         supabase.from('board_posts').select('*').eq('room_code', room),
         supabase.from('effigy_hits').select('*').eq('room_code', room),
       ]);
-      const pList = !e1 && posts ? posts : get(POSTS_KEY, []);
-      const hitRows = !e2 && hits ? hits : [];
+      // 解密 target 后再做分组统计（target 在库里是密文）
+      const pList = !e1 && posts ? await Promise.all(posts.map(async (p) => ({ ...p, target: await decryptText(key, p.target) }))) : get(POSTS_KEY, []);
+      const hitRows = !e2 && hits ? await Promise.all(hits.map(async (h) => ({ ...h, target: await decryptText(key, h.target) }))) : [];
 
       // 卡1：挨打榜 = 打小人 effigy_hits 按 target 计数（被揍次数）
       const hitMap = {};

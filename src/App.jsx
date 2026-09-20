@@ -5,6 +5,7 @@ import PublicBoard from './components/PublicBoard.jsx';
 import Ranking from './components/Ranking.jsx';
 import AnonymousPanel from './components/AnonymousPanel.jsx';
 import RoomBar from './components/RoomBar.jsx';
+import AiCompanion from './components/AiCompanion.jsx';
 import { randomAnon } from './lib/anon.js';
 import { getRoomList, getCurrentRoom, genRoomCode, addRoom } from './lib/rooms.js';
 
@@ -22,7 +23,7 @@ export default function App() {
   const [active, setActive] = useState('effigy');
   const [room, setRoom] = useState(() => {
     const fromUrl = new URLSearchParams(window.location.search).get('room');
-    if (fromUrl) return addRoom(fromUrl.toUpperCase());
+    if (fromUrl) return addRoom(fromUrl);
     const list = getRoomList();
     return getCurrentRoom() || list[0] || addRoom(genRoomCode());
   });
@@ -117,6 +118,9 @@ export default function App() {
           </button>
         ))}
       </nav>
+
+      {/* AI 解压搭子：右下角浮窗（自包含，不动底部导航格数） */}
+      <AiCompanion />
     </div>
   );
 }

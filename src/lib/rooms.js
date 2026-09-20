@@ -12,8 +12,23 @@ const ROOM_WORDS = [
   '摸鱼茶馆', '八卦小屋', '怨气回收站', '摸鱼便利店', '老板画饼铺', '背锅互助组', '摸鱼研究院', '吐槽收容所',
 ];
 
-export function genRoomCode() {
-  return ROOM_WORDS[Math.floor(Math.random() * ROOM_WORDS.length)];
+// 6 位大写 base36 随机后缀：让房间号不可猜测、不可枚举、重名也不串房
+export function genRoomSuffix() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let s = '';
+  const a = new Uint8Array(6);
+  crypto.getRandomValues(a);
+  for (let i = 0; i < 6; i++) s += chars[a[i] % 36];
+  return s;
+}
+
+// 房间号 = 友好名(用户自取或随机) + '-' + 随机后缀 → 唯一且不可枚举
+// 例：摸鱼屋-7F3K9Z ｜ 用户自取：我的小屋-AB12CD
+export function genRoomCode(name) {
+  const n = name && String(name).trim()
+    ? String(name).trim()
+    : ROOM_WORDS[Math.floor(Math.random() * ROOM_WORDS.length)];
+  return n + '-' + genRoomSuffix();
 }
 
 export function getRoomList() {
@@ -35,8 +50,9 @@ export function saveRoomList(list) {
 }
 
 // 加入/新建房间：写入列表（去重），并置为当前
+// 注意：不再做 toUpperCase，保证与数据库 room_code 完全一致（房间号含随机后缀，大小写敏感匹配）
 export function addRoom(code) {
-  const c = String(code).toUpperCase();
+  const c = String(code);
   const list = getRoomList().filter((r) => r !== c);
   list.unshift(c);
   saveRoomList(list.slice(0, 30));
@@ -46,7 +62,7 @@ export function addRoom(code) {
 
 // 从列表移除（销毁）：若销毁的是当前房间，切到列表里下一个
 export function removeRoom(code) {
-  const c = String(code).toUpperCase();
+  const c = String(code);
   const list = getRoomList().filter((r) => r !== c);
   saveRoomList(list);
   if (getCurrentRoom() === c) setCurrentRoom(list[0] || '');

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
+import { getRoomKey, encryptText, decryptText } from '../lib/crypto.js';
 
 // 公共广场：跨房间共享，room_code 固定为 'PUBLIC'
 const PUBLIC_CODE = 'PUBLIC';

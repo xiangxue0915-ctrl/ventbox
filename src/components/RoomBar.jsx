@@ -149,12 +149,12 @@ export default function RoomBar({ room, onChange }) {
           <div className="flex items-center gap-2 mb-3">
             <input
               className="input !py-1.5 !text-sm flex-1"
-              placeholder="输入房间码加入"
+              placeholder="输入房名开新房，或粘贴完整房间码加入"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && join()}
+              onKeyDown={(e) => e.key === 'Enter' && resolve()}
             />
-            <button className="text-xs btn-ghost shrink-0" onClick={join}>加入</button>
+            <button className="text-xs btn-ghost shrink-0" onClick={resolve}>开/进</button>
             <button className="text-xs btn-ghost shrink-0" onClick={create}>新建</button>
           </div>
 
