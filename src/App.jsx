@@ -95,7 +95,7 @@ export default function App() {
             {active === 'effigy' && <HitEffigy room={room} />}
             {active === 'board' && <PublicBoard anon={anon} room={room} />}
             {active === 'ranking' && <Ranking room={room} />}
-            {active === 'anon' && <AnonymousPanel anon={anon} onReroll={rerollAnon} />}
+            {active === 'anon' && <AnonymousPanel anon={anon} onReroll={rerollAnon} onEdit={setAnon} />}
             <footer className="text-xs text-slate-400 mt-8">
               多人房间 · 数据云端实时同步 · 全程匿名 · 私密树洞仍仅存本机
             </footer>

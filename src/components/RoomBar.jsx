@@ -74,7 +74,7 @@ export default function RoomBar({ room, onChange }) {
     const c = genRoomCode(); addRoom(c); setList(getRoomList()); onChange(c); flash(`已新建房间 ${c}`);
   }
   function join() {
-    const c = input.trim().toUpperCase();
+    const c = input.trim();
     if (!c) return;
     switchTo(c); setInput('');
   }
@@ -152,9 +152,9 @@ export default function RoomBar({ room, onChange }) {
               placeholder="输入房名开新房，或粘贴完整房间码加入"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && resolve()}
+              onKeyDown={(e) => e.key === 'Enter' && join()}
             />
-            <button className="text-xs btn-ghost shrink-0" onClick={resolve}>开/进</button>
+            <button className="text-xs btn-ghost shrink-0" onClick={join}>开/进</button>
             <button className="text-xs btn-ghost shrink-0" onClick={create}>新建</button>
           </div>
 

@@ -16,6 +16,9 @@ const EMOJIS = [
   '🐙', '🐼', '🐰', '🦊', '🦙', '🦆',
 ];
 
+// 供马甲自定义页挑选头像
+export const AVATAR_EMOJIS = EMOJIS;
+
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }

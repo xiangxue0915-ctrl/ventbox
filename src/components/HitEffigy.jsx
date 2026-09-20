@@ -476,6 +476,25 @@ export default function HitEffigy({ room }) {
     // eslint-disable-next-line
   }, [room, target]);
 
+  // 接收 AI 搭子发来的「贴到小人身上」事件
+  useEffect(() => {
+    function onPin(e) {
+      const text = String(e.detail || '').trim().slice(0, 30);
+      if (!text) return;
+      if (!target) {
+        setNameHint('先在上方给对象「贴上去」一个名字，再回来贴纸条');
+        setTimeout(() => setNameHint(''), 3000);
+        return;
+      }
+      setNote(text);
+      set(NOTE_KEY + ':' + room + ':' + target, text);
+      setNameHint(`📌 已把一句话贴到「${target}」身上`);
+      setTimeout(() => setNameHint(''), 3000);
+    }
+    window.addEventListener('ventbox:pin-note', onPin);
+    return () => window.removeEventListener('ventbox:pin-note', onPin);
+  }, [room, target]);
+
   function pasteNote() {
     const n = noteInput.trim();
     if (!n || !target) return;

@@ -35,7 +35,15 @@ export default function AiCompanion() {
   const [hint, setHint] = useState('');
   const [sp, setSp] = useState('deepseek'); // settings provider
   const [sk, setSk] = useState(''); // settings key
+  const [customBase, setCustomBase] = useState(''); // 自定义 OpenAI 兼容地址
+  const [customModel, setCustomModel] = useState(''); // 自定义模型名
+  const [botName, setBotName] = useState(() => { try { return localStorage.getItem('ventbox:ai_name') || '解压搭子'; } catch { return '解压搭子'; } });
+  const [botEmoji, setBotEmoji] = useState(() => { try { return localStorage.getItem('ventbox:ai_emoji') || '🤖'; } catch { return '🤖'; } });
+  const [listening, setListening] = useState(false); // 语音输入中
+  const [modelName, setModelName] = useState(''); // 服务端返回的真实模型
+  const [ttsOn, setTtsOn] = useState(() => { try { return localStorage.getItem('ventbox:ai_tts') === '1'; } catch { return false; } });
   const listRef = useRef(null);
+  const recRef = useRef(null);
   const panelRef = useRef(null);
   // 窗口布局：null=默认底部抽屉；{x,y}=自由浮动；docked=停靠右侧
   const [pos, setPos] = useState(null);
@@ -46,7 +54,13 @@ export default function AiCompanion() {
   const hasKey = !!loadKey();
 
   useEffect(() => {
-    if (view === 'settings') { setSp(loadProvider()); setSk(loadKey()); }
+    if (view === 'settings') {
+      setSp(loadProvider()); setSk(loadKey());
+      try {
+        setCustomBase(localStorage.getItem('ventbox:ai_baseurl') || '');
+        setCustomModel(localStorage.getItem('ventbox:ai_model') || '');
+      } catch { /* ignore */ }
+    }
   }, [view]);
 
   useEffect(() => {
@@ -75,7 +89,8 @@ export default function AiCompanion() {
       dragRef.current = null;
       setDragging(false);
       setPos((p) => {
-        if (p && p.x > window.innerWidth - 440) { setDocked(true); return null; }
+        // 面板右缘靠近屏幕右边缘（60px 内）就自动吸附停靠
+        if (p && p.x + 384 > window.innerWidth - 60) { setDocked(true); return null; }
         return p;
       });
     }
@@ -89,8 +104,63 @@ export default function AiCompanion() {
     try {
       window.localStorage.setItem('ventbox:ai_provider', sp);
       window.localStorage.setItem('ventbox:ai_key', sk.trim());
+      window.localStorage.setItem('ventbox:ai_baseurl', customBase.trim());
+      window.localStorage.setItem('ventbox:ai_model', customModel.trim());
+      window.localStorage.setItem('ventbox:ai_name', botName.trim() || '解压搭子');
+      window.localStorage.setItem('ventbox:ai_emoji', botEmoji);
     } catch { /* ignore */ }
     setView('chat');
+  }
+
+  // 语音播报：浏览器原生 TTS，0 成本
+  function speak(text) {
+    try {
+      if (localStorage.getItem('ventbox:ai_tts') !== '1') return;
+      const u = new SpeechSynthesisUtterance(String(text).slice(0, 300));
+      u.lang = 'zh-CN';
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    } catch { /* ignore */ }
+  }
+  function toggleTts() {
+    const next = !ttsOn;
+    setTtsOn(next);
+    try { localStorage.setItem('ventbox:ai_tts', next ? '1' : '0'); } catch { /* ignore */ }
+    if (!next) { try { window.speechSynthesis.cancel(); } catch { /* ignore */ } }
+  }
+
+  // 语音输入：浏览器原生 SpeechRecognition（Edge/Chrome 支持）
+  function toggleMic() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setHint('当前浏览器不支持语音输入，请用 Edge 或 Chrome'); return; }
+    if (listening) { try { recRef.current && recRef.current.stop(); } catch { /* ignore */ } return; }
+    try {
+      const rec = new SR();
+      rec.lang = 'zh-CN';
+      rec.interimResults = false;
+      rec.continuous = false;
+      rec.onresult = (e) => {
+        let txt = '';
+        for (let i = 0; i < e.results.length; i++) {
+          if (e.results[i].isFinal) txt += e.results[i][0].transcript;
+        }
+        if (txt) setInput((prev) => (prev ? prev + ' ' : '') + txt.trim());
+      };
+      rec.onend = () => setListening(false);
+      rec.onerror = () => setListening(false);
+      recRef.current = rec;
+      setListening(true);
+      rec.start();
+    } catch { setListening(false); }
+  }
+
+  // 把某句回复贴到打小人页当前对象身上
+  function pinToEffigy(text) {
+    const t = String(text || '').trim();
+    if (!t) return;
+    window.dispatchEvent(new CustomEvent('ventbox:pin-note', { detail: t }));
+    setHint('📌 已贴到打小人页当前对象身上');
+    setTimeout(() => setHint(''), 2500);
   }
 
   async function send() {
@@ -99,19 +169,29 @@ export default function AiCompanion() {
     const provider = loadProvider();
     const userKey = loadKey();
     const next = [...messages, { role: 'user', content: text }];
+    const payload = { provider, userKey, messages: [{ role: 'system', content: SYS }, ...next] };
+    if (provider === 'custom') {
+      try {
+        payload.baseUrl = localStorage.getItem('ventbox:ai_baseurl') || '';
+        payload.model = localStorage.getItem('ventbox:ai_model') || '';
+      } catch { /* ignore */ }
+    }
     setMessages(next);
     setInput('');
     setStreaming(true);
     setHint('');
     setMode(null);
+    setModelName('');
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-companion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, userKey, messages: [{ role: 'system', content: SYS }, ...next] }),
+        body: JSON.stringify(payload),
       });
       const m = res.headers.get('x-ai-mode');
       if (m) setMode(m);
+      const mm = res.headers.get('x-ai-model');
+      if (mm) setModelName(mm);
       if (!res.ok) {
         let msg = 'AI 暂时无法回应，请稍后再试';
         try { const j = await res.json(); if (j && j.message) msg = j.message; } catch { /* ignore */ }
@@ -130,6 +210,7 @@ export default function AiCompanion() {
         acc += decoder.decode(value, { stream: true });
         setMessages([...next, { role: 'assistant', content: acc }]);
       }
+      speak(acc);
     } catch (e) {
       const msg = 'AI 功能暂未启用（需要管理员部署中转函数）';
       setMessages([...next, { role: 'assistant', content: '⚠️ ' + msg }]);
@@ -144,10 +225,10 @@ export default function AiCompanion() {
       {/* 浮窗按钮：移动端抬到导航栏之上 */}
       <button
         onClick={() => { setOpen((v) => !v); setHint(''); }}
-        title="AI 解压搭子"
+        title={`AI ${botName}`}
         className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-40 w-14 h-14 rounded-full bg-rose-500 text-white text-2xl shadow-lg shadow-rose-200 flex items-center justify-center active:scale-95 transition hover:bg-rose-600"
       >
-        🤖
+        {botEmoji}
       </button>
 
       {open && (
@@ -168,12 +249,13 @@ export default function AiCompanion() {
             onPointerDown={onHeaderPointerDown}
             className="flex items-center gap-2 px-4 h-14 border-b border-slate-100 shrink-0 md:cursor-move select-none"
           >
-            <span className="text-xl">🤖</span>
-            <span className="font-bold text-slate-800">AI 解压搭子</span>
+            <span className="text-xl">{botEmoji}</span>
+            <span className="font-bold text-slate-800">AI {botName}</span>
             <div className="flex-1" />
-            <button className="hidden md:block text-slate-400 hover:text-rose-500 text-sm" onClick={() => { setDocked((d) => !d); setPos(null); }} title={docked ? '收回底部' : '停靠到右侧'}>{docked ? '⇤' : '⇥'}</button>
-            <button className="text-slate-400 hover:text-rose-500 text-sm" onClick={openSettings} title="设置">⚙️</button>
-            <button className="text-slate-400 hover:text-slate-600 text-sm ml-1" onClick={() => setOpen(false)} title="关闭">✕</button>
+            <button className="hidden md:flex items-center justify-center w-8 h-8 rounded-lg text-base text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition" onClick={() => { setDocked((d) => !d); setPos(null); }} title={docked ? '收回底部（也可拖标题栏移动）' : '停靠到右侧（也可拖标题栏移动）'}>{docked ? '⇤' : '⇥'}</button>
+            <button className="flex items-center justify-center w-8 h-8 rounded-lg text-base text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition" onClick={toggleTts} title={ttsOn ? '关闭语音播报' : '开启语音播报'}>{ttsOn ? '🔊' : '🔇'}</button>
+            <button className="flex items-center justify-center w-8 h-8 rounded-lg text-base text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition" onClick={openSettings} title="设置">⚙️</button>
+            <button className="flex items-center justify-center w-8 h-8 rounded-lg text-base text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition" onClick={() => setOpen(false)} title="关闭">✕</button>
           </div>
 
           {view === 'settings' ? (
@@ -188,11 +270,41 @@ export default function AiCompanion() {
                   <option value="zhipu">智谱 GLM-4-Flash（完全免费，推荐）</option>
                   <option value="deepseek">DeepSeek（deepseek-chat，需充值）</option>
                   <option value="qwen">通义千问（qwen-plus，新用户送额度）</option>
+                  <option value="custom">自定义（任意 OpenAI 兼容接口）</option>
                 </select>
               </div>
+              {sp === 'custom' && (
+                <div className="space-y-2 rounded-xl bg-slate-50 p-3">
+                  <p className="text-[11px] text-slate-500">任意 OpenAI 兼容服务都能接：填接口地址 + 模型名 + 你自己的 key。仅支持 https。</p>
+                  <div>
+                    <label className="text-xs text-slate-600">接口地址（Base URL）</label>
+                    <input className="input mt-1" placeholder="https://api.xxx.com/v1" value={customBase} onChange={(e) => setCustomBase(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-600">模型名</label>
+                    <input className="input mt-1" placeholder="如 gpt-4o-mini / glm-4-plus" value={customModel} onChange={(e) => setCustomModel(e.target.value)} />
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="text-sm text-slate-600">API Key（以 sk- 开头）</label>
                 <input className="input mt-1" type="password" placeholder="sk-..." value={sk} onChange={(e) => setSk(e.target.value)} />
+              </div>
+
+              {/* 搭子定制：名字 + 头像 */}
+              <div className="border-t border-slate-100 pt-3">
+                <h4 className="font-semibold text-slate-700 mb-1">🎨 定制你的搭子</h4>
+                <label className="text-xs text-slate-600">名字</label>
+                <input className="input mt-1" maxLength={12} value={botName} placeholder="解压搭子" onChange={(e) => setBotName(e.target.value)} />
+                <label className="text-xs text-slate-600 mt-2 block">头像</label>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {['🤖', '👾', '🐙', '🦊', '🐸', '🐼', '🦄', '🐰', '🐢', '🦖'].map((e) => (
+                    <button key={e} onClick={() => setBotEmoji(e)}
+                      className={`w-9 h-9 rounded-xl border text-lg flex items-center justify-center transition ${botEmoji === e ? 'bg-rose-500 border-rose-500' : 'bg-white border-slate-200 hover:border-rose-300'}`}>
+                      {e}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="flex gap-2">
                 <button className="btn-primary flex-1" onClick={saveSettings}>保存</button>
@@ -215,29 +327,38 @@ export default function AiCompanion() {
               <div ref={listRef} className="flex-1 overflow-auto p-4 space-y-3">
                 {messages.length === 0 && (
                   <div className="text-sm text-slate-500 leading-relaxed bg-rose-50 rounded-2xl p-4">
-                    <p className="font-semibold text-rose-600 mb-1">嗨，我是你的解压搭子 🤗</p>
+                    <p className="font-semibold text-rose-600 mb-1">嗨，我是你的{botName} {botEmoji}</p>
                     <p>把今天憋屈的事跟我说说吧，我陪你一起吐槽、帮你顺顺气。</p>
+                    <p className="text-[11px] text-slate-400 mt-2">🔒 你和我的聊天只存在你当前页面里，不进任何数据库，同房间的人和其他人都看不到。</p>
                     {!hasKey && (
                       <div className="mt-3 text-xs text-slate-500 bg-white rounded-xl p-3 leading-relaxed">
                         <p className="font-semibold text-slate-600">✅ 你现在就能聊，不用填任何 key</p>
-                        <p>当前用的是公共免费模型（智谱 GLM-4-Flash，每天共享限额，先到先得）。想换个模型（DeepSeek / 智谱 / 通义都行），去设置里填你自己的 key 即可——免费申请、只存你自己浏览器、流量算你自己的账号。</p>
+                        <p>当前用的是公共免费模型（每天共享限额，先到先得）。想换模型（智谱 / DeepSeek / 通义 / 任意 OpenAI 兼容接口），去设置里填你自己的 key 即可——只存你本机浏览器、流量算你自己的账号。</p>
                         <button className="btn-ghost text-xs mt-2" onClick={openSettings}>换个模型（可选）</button>
                       </div>
                     )}
                   </div>
                 )}
                 {messages.map((m, i) => (
-                  <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
                     <div className={`max-w-[85%] px-3 py-2 rounded-2xl whitespace-pre-wrap break-words text-sm ${m.role === 'user' ? 'bg-rose-500 text-white rounded-br-sm' : 'bg-slate-100 text-slate-700 rounded-bl-sm'}`}>
                       {m.content || '…'}
                     </div>
+                    {m.role === 'assistant' && m.content && !String(m.content).startsWith('⚠️') && (
+                      <button className="text-[11px] text-slate-400 hover:text-rose-500 mt-0.5" onClick={() => pinToEffigy(m.content)}
+                        title="把这句话贴到打小人页当前对象身上">
+                        📌 贴到小人身上
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
 
               {mode && (
                 <div className="px-4 pb-1 text-[11px] text-slate-400">
-                  {mode === 'byok' ? '你正在用自己的 key（流量算你自己的账号）' : '你正在使用共享免费额度（有限），建议去设置填你自己的免费 key 永久免费'}
+                  {mode === 'byok'
+                    ? `你正在用自己的 key${modelName ? ` · ${modelName}` : ''}（流量算你自己的账号）`
+                    : `公共免费额度${modelName ? ` · 当前模型 ${modelName}` : ''}（每天有限），可在设置里填自己的 key`}
                 </div>
               )}
               {hint && (
@@ -245,9 +366,11 @@ export default function AiCompanion() {
               )}
 
               <div className="flex items-center gap-2 p-3 border-t border-slate-100 shrink-0">
+                <button className={`shrink-0 w-9 h-9 rounded-full border flex items-center justify-center transition ${listening ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-500 border-slate-200 hover:border-rose-300'}`}
+                  onClick={toggleMic} title="语音输入（Edge/Chrome）">{listening ? '⏹' : '🎤'}</button>
                 <input
                   className="input flex-1"
-                  placeholder={streaming ? '搭子正在回…' : '说点什么解解压吧～'}
+                  placeholder={listening ? '正在听…再点一次麦克风结束' : streaming ? '搭子正在回…' : '说点什么解解压吧～（可语音）'}
                   value={input}
                   disabled={streaming}
                   onChange={(e) => setInput(e.target.value)}
