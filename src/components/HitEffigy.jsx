@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { get, set } from '../lib/storage.js';
 import { supabase } from '../lib/supabase.js';
+import { getRoomKey, encryptText, decryptText } from '../lib/crypto.js';
 
 const HITS_KEY = 'effigy.hits'; // 离线回退：{ 对象: 总次数 }
 const DETAIL_KEY = 'effigy.detail'; // 离线回退：{ 对象: { parts, pp } }
+const NOTE_KEY = 'effigy.note'; // 骂Ta纸条：按 房间+对象 隔离，仅存本机
 
 const VIEW = { w: 160, h: 220 };
 const CARD = { w: 320, scale: 2, ox: (320 - 160 * 2) / 2, oy: 78 };
@@ -247,6 +249,18 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
 }
 
+// 纸条文案折行：每行 8 字，最多 3 行，超长截断
+function noteLines(s) {
+  const out = [];
+  const t = String(s || '').trim();
+  for (let i = 0; i < t.length && out.length < 3; i += 8) {
+    let part = t.slice(i, i + 8);
+    if (out.length === 2 && t.length > 24) part = part.slice(0, 7) + '…';
+    out.push(part);
+  }
+  return out;
+}
+
 // 道具痕迹在 SVG 上的形状（主舞台与通缉墙缩略图共用，保证上下一致）
 function markShape(m, i) {
   switch (m.prop) {
@@ -289,7 +303,7 @@ function MiniEffigy({ target, total, marks, active, onClick }) {
 }
 
 // 在 canvas 上绘制纸人（含四肢摆动 pose、伤痕、吐血、眼泪、绷带、X眼、封条）
-function drawEffigy(ctx, { target, total, marks, mouth, down, crying, pose = {} }) {
+function drawEffigy(ctx, { target, total, marks, mouth, down, crying, pose = {}, note = '' }) {
   const s = CARD.scale, ox = CARD.ox, oy = CARD.oy;
   const P = (x, y) => [ox + x * s, oy + y * s];
   ctx.save();
@@ -335,6 +349,16 @@ function drawEffigy(ctx, { target, total, marks, mouth, down, crying, pose = {} 
     roundRect(ctx, sx, sy, 56 * s, 26 * s, 6 * s); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#e11d48'; ctx.font = `bold ${13 * s}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(target.length > 6 ? target.slice(0, 6) + '…' : target, sx + 28 * s, sy + 14 * s);
+  }
+  // 骂Ta纸条（与页面 SVG 同款样式）
+  if (note) {
+    const [nx, ny] = P(102, 132);
+    ctx.save(); ctx.translate(nx + 26 * s, ny + 19 * s); ctx.rotate((6 * Math.PI) / 180);
+    ctx.fillStyle = '#fef9c3'; ctx.strokeStyle = '#eab308'; ctx.lineWidth = 1.5 * s;
+    roundRect(ctx, -26 * s, -19 * s, 52 * s, 38 * s, 4 * s); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#854d0e'; ctx.font = `${7.5 * s}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    noteLines(note).forEach((line, li) => ctx.fillText(line, 0, (-19 + 9 + li * 9) * s));
+    ctx.restore();
   }
   // 淤青
   marks.bruises.forEach((b) => { const p = P(b.x, b.y); ctx.fillStyle = 'rgba(168,85,247,0.32)'; ctx.beginPath(); ctx.arc(p[0], p[1], b.r * s, 0, Math.PI * 2); ctx.fill(); });
@@ -400,6 +424,8 @@ export default function HitEffigy({ room }) {
   const [bubble, setBubble] = useState('');
   const [nameHint, setNameHint] = useState('');
   const [combo, setCombo] = useState(0);
+  const [noteInput, setNoteInput] = useState(''); // 纸条输入
+  const [note, setNote] = useState(''); // 当前对象身上的纸条内容
   const [cardImg, setCardImg] = useState('');
   const [hitFx, setHitFx] = useState(null); // { x, y, id }
   const [floaters, setFloaters] = useState([]); // 飘字：{ id, text, side, top }
@@ -442,6 +468,20 @@ export default function HitEffigy({ room }) {
     setTarget(''); setRelief(''); setMouth(null); setBubble(''); setCardImg(''); setHitFx(null); setPose({});
     // eslint-disable-next-line
   }, [room]);
+
+  // 纸条按 房间+对象 隔离：切对象自动换纸条
+  useEffect(() => {
+    setNote(target ? get(NOTE_KEY + ':' + room + ':' + target, '') : '');
+    setNoteInput('');
+    // eslint-disable-next-line
+  }, [room, target]);
+
+  function pasteNote() {
+    const n = noteInput.trim();
+    if (!n || !target) return;
+    setNote(n); setNoteInput('');
+    set(NOTE_KEY + ':' + room + ':' + target, n);
+  }
 
   async function refresh() {
     const key = await getRoomKey(room);
@@ -560,16 +600,21 @@ export default function HitEffigy({ room }) {
     const nh = { ...localHits }; const nd = { ...localDetail };
     delete nh[target]; delete nd[target];
     setLocalHits(nh); setLocalDetail(nd); set(hitsKey, nh); set(detailKey, nd);
+    // 库里 target 是密文（历史房间可能是明文），两种都删一次
+    const enc = await encryptText(await getRoomKey(room), target);
+    await supabase.from('effigy_hits').delete().eq('room_code', room).eq('target', enc);
     await supabase.from('effigy_hits').delete().eq('room_code', room).eq('target', target);
     setRows([]); setLoaded(false); refresh().then(() => setLoaded(true));
-    setTarget(''); setRelief(''); setCardImg('');
+    setTarget(''); setRelief(''); setCardImg(''); setNote('');
+    set(NOTE_KEY + ':' + room + ':' + target, '');
   }
 
   async function clearAll() {
     if (!window.confirm('确定清空本房间所有打击记录？')) return;
     setLocalHits({}); setLocalDetail({}); set(hitsKey, {}); set(detailKey, {});
+    names.forEach((n) => set(NOTE_KEY + ':' + room + ':' + n, ''));
     await supabase.from('effigy_hits').delete().eq('room_code', room);
-    setRows([]); setTarget(''); setRelief(''); setCardImg('');
+    setRows([]); setTarget(''); setRelief(''); setCardImg(''); setNote('');
   }
 
   // 战果图：复用同一套绘制函数 + 同一 pose + 道具统计，与画面完全一致
@@ -588,7 +633,7 @@ export default function HitEffigy({ room }) {
     ctx.fillStyle = '#1f2937'; ctx.font = 'bold 18px sans-serif';
     ctx.fillText('对象：' + (target.length > 10 ? target.slice(0, 10) + '…' : target), W / 2, 56);
     // 纸人
-    drawEffigy(ctx, { target, total, marks, mouth: null, down: st.down, crying: st.crying, pose });
+    drawEffigy(ctx, { target, total, marks, mouth: null, down: st.down, crying: st.crying, pose, note });
     // 统计区
     let y = CARD.oy + VIEW.h * CARD.scale + 28;
     ctx.textAlign = 'left';
@@ -626,8 +671,8 @@ export default function HitEffigy({ room }) {
 
   return (
     <div>
-      {/* 宽屏不限宽：纸人 + 右侧信息栏并排，避免右侧大片留白 */}
-      <div className="lg:max-w-none max-w-2xl">
+      {/* 宽度跟随全局统一容器，不再单独铺开 */}
+      <div>
         <div className="flex items-baseline gap-2 mb-4">
           <h2 className="text-xl font-bold text-slate-800">👊 打小人</h2>
           <span className="text-xs text-slate-400">{target ? `当前：${target} · 全房间已打 ${total} 下` : '先贴一个名字'}</span>
@@ -639,6 +684,13 @@ export default function HitEffigy({ room }) {
               value={inputName} onChange={(e) => setInputName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && pasteName()} />
             <button className="btn-ghost shrink-0" onClick={pasteName}>贴上去</button>
           </div>
+          {target && (
+            <div className="flex gap-2 mt-2">
+              <input className="input" placeholder="骂Ta一句，贴成纸条钉在Ta身上（可选）" maxLength={30}
+                value={noteInput} onChange={(e) => setNoteInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && pasteNote()} />
+              <button className="btn-ghost shrink-0" onClick={pasteNote}>贴纸条</button>
+            </div>
+          )}
           {nameHint && (<p className="text-xs text-rose-500 mt-1.5 animate-pop">💡 {nameHint}</p>)}
 
           <div className="flex flex-wrap gap-2 mt-3">
@@ -689,6 +741,13 @@ export default function HitEffigy({ room }) {
               {mouthShape}
               {target && (<g><rect x="52" y="105" width="56" height="26" rx="6" fill="#fff1f2" stroke="#fda4af" strokeWidth="1.5" />
                 <text x="80" y="122" textAnchor="middle" fontSize="13" fill="#e11d48" fontWeight="bold">{target.length > 6 ? target.slice(0, 6) + '…' : target}</text></g>)}
+              {/* 骂Ta纸条：钉在身上，随瘫倒一起旋转 */}
+              {note && (<g transform="rotate(6 128 150)">
+                <rect x="102" y="132" width="52" height="38" rx="4" fill="#fef9c3" stroke="#eab308" strokeWidth="1.5" />
+                {noteLines(note).map((line, li) => (
+                  <text key={li} x="128" y={141 + li * 9} textAnchor="middle" fontSize="7.5" fill="#854d0e">{line}</text>
+                ))}
+              </g>)}
               {marks && marks.bruises.map((b, i) => (<circle key={'b' + i} cx={b.x} cy={b.y} r={b.r} fill="#a855f7" opacity="0.32" />))}
               {marks && marks.marks.map(markShape)}
               {marks && marks.blood.map((b, i) => (

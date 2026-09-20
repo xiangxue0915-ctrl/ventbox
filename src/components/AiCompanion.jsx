@@ -36,6 +36,12 @@ export default function AiCompanion() {
   const [sp, setSp] = useState('deepseek'); // settings provider
   const [sk, setSk] = useState(''); // settings key
   const listRef = useRef(null);
+  const panelRef = useRef(null);
+  // 窗口布局：null=默认底部抽屉；{x,y}=自由浮动；docked=停靠右侧
+  const [pos, setPos] = useState(null);
+  const [docked, setDocked] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef(null);
 
   const hasKey = !!loadKey();
 
@@ -46,6 +52,37 @@ export default function AiCompanion() {
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, open]);
+
+  // 桌面端拖动：按住标题栏拖；松手时若靠近屏幕右缘则自动停靠
+  function onHeaderPointerDown(e) {
+    if (e.target.closest('button, input, select, a')) return;
+    if (!window.matchMedia('(min-width: 768px)').matches) return; // 移动端保持底部抽屉
+    const rect = panelRef.current ? panelRef.current.getBoundingClientRect() : { left: 0, top: 0 };
+    dragRef.current = { sx: e.clientX, sy: e.clientY, px: rect.left, py: rect.top };
+    setDragging(true);
+    e.preventDefault();
+  }
+
+  useEffect(() => {
+    if (!dragging) return;
+    function move(e) {
+      const d = dragRef.current; if (!d) return;
+      const x = Math.min(Math.max(8, d.px + e.clientX - d.sx), window.innerWidth - 120);
+      const y = Math.min(Math.max(8, d.py + e.clientY - d.sy), window.innerHeight - 90);
+      setPos({ x, y });
+    }
+    function up() {
+      dragRef.current = null;
+      setDragging(false);
+      setPos((p) => {
+        if (p && p.x > window.innerWidth - 440) { setDocked(true); return null; }
+        return p;
+      });
+    }
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+  }, [dragging]);
 
   function openSettings() { setHint(''); setView('settings'); }
   function saveSettings() {
@@ -114,12 +151,27 @@ export default function AiCompanion() {
       </button>
 
       {open && (
-        <div className="fixed inset-x-0 bottom-0 z-50 md:max-w-md md:mx-auto bg-white rounded-t-2xl shadow-2xl border-t border-rose-100 flex flex-col h-[74vh]">
-          {/* 头部 */}
-          <div className="flex items-center gap-2 px-4 h-14 border-b border-slate-100 shrink-0">
+        <div
+          ref={panelRef}
+          className={
+            'fixed z-50 bg-white shadow-2xl border-rose-100 flex flex-col ' +
+            (docked
+              ? 'right-0 top-14 bottom-0 md:bottom-6 w-[24rem] max-w-[92vw] rounded-l-2xl border-l'
+              : pos
+                ? 'rounded-2xl border w-[24rem] max-w-[calc(100vw-1rem)] h-[70vh]'
+                : 'inset-x-0 bottom-0 md:max-w-md md:mx-auto rounded-t-2xl border-t h-[74vh]')
+          }
+          style={pos && !docked ? { left: pos.x, top: pos.y } : undefined}
+        >
+          {/* 头部：桌面端可按住拖动；拖到屏幕右缘自动停靠 */}
+          <div
+            onPointerDown={onHeaderPointerDown}
+            className="flex items-center gap-2 px-4 h-14 border-b border-slate-100 shrink-0 md:cursor-move select-none"
+          >
             <span className="text-xl">🤖</span>
             <span className="font-bold text-slate-800">AI 解压搭子</span>
             <div className="flex-1" />
+            <button className="hidden md:block text-slate-400 hover:text-rose-500 text-sm" onClick={() => { setDocked((d) => !d); setPos(null); }} title={docked ? '收回底部' : '停靠到右侧'}>{docked ? '⇤' : '⇥'}</button>
             <button className="text-slate-400 hover:text-rose-500 text-sm" onClick={openSettings} title="设置">⚙️</button>
             <button className="text-slate-400 hover:text-slate-600 text-sm ml-1" onClick={() => setOpen(false)} title="关闭">✕</button>
           </div>
@@ -152,6 +204,7 @@ export default function AiCompanion() {
                 <p>2) 找到 API Keys / 创建密钥，复制以 <code>sk-</code> 开头的 key</p>
                 <p>3) 粘回来保存即可，永久免费</p>
                 <div className="flex flex-wrap gap-2 mt-2">
+                  <a href="https://open.bigmodel.cn/" target="_blank" rel="noopener noreferrer" className="text-rose-500 underline">智谱申请（免费）↗</a>
                   <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer" className="text-rose-500 underline">DeepSeek 申请 ↗</a>
                   <a href="https://help.aliyun.com/zh/model-studio/" target="_blank" rel="noopener noreferrer" className="text-rose-500 underline">通义千问申请 ↗</a>
                 </div>
@@ -167,7 +220,7 @@ export default function AiCompanion() {
                     {!hasKey && (
                       <div className="mt-3 text-xs text-slate-500 bg-white rounded-xl p-3 leading-relaxed">
                         <p className="font-semibold text-slate-600">✅ 你现在就能聊，不用填任何 key</p>
-                        <p>当前用的是公共免费模型（Qwen2.5，每天共享限额，先到先得）。想换个更聪明的模型（DeepSeek / 智谱 / 通义都行），去设置里填你自己的 key 即可——免费申请、只存你自己浏览器、流量算你自己的账号。</p>
+                        <p>当前用的是公共免费模型（智谱 GLM-4-Flash，每天共享限额，先到先得）。想换个模型（DeepSeek / 智谱 / 通义都行），去设置里填你自己的 key 即可——免费申请、只存你自己浏览器、流量算你自己的账号。</p>
                         <button className="btn-ghost text-xs mt-2" onClick={openSettings}>换个模型（可选）</button>
                       </div>
                     )}

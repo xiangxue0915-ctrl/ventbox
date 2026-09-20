@@ -68,8 +68,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* 打小人页宽屏铺开（放左右刑具架）；其余页限制 max-w-4xl，避免宽屏下被拉散 */}
-      <div className={active === 'effigy' ? 'mx-auto px-4 py-5 flex gap-5 max-w-[1100px]' : 'max-w-4xl mx-auto px-4 py-5 flex gap-5'}>
+      {/* 全部页签统一 max-w-4xl，切换时宽度不再跳动 */}
+      <div className="max-w-4xl mx-auto px-4 py-5 flex gap-5">
         {/* ===== 桌面：左侧竖排导航 ===== */}
         <nav className="hidden md:flex flex-col gap-1 w-36 shrink-0 sticky top-20 self-start">
           {TABS.map((t) => (
@@ -88,9 +88,9 @@ export default function App() {
           ))}
         </nav>
 
-        {/* ===== 主内容区：打小人页要在宽屏铺开（放两侧刑具架），其余页统一阅读宽度 ===== */}
+        {/* ===== 主内容区：所有页签统一阅读宽度，杜绝切页跳动 ===== */}
         <main className="flex-1 min-w-0 pb-24 md:pb-6">
-          <div className={active === 'effigy' ? '' : 'max-w-2xl'}>
+          <div className="max-w-2xl">
             {active === 'treehole' && <TreeHole />}
             {active === 'effigy' && <HitEffigy room={room} />}
             {active === 'board' && <PublicBoard anon={anon} room={room} />}

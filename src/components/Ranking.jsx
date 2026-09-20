@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get } from '../lib/storage.js';
 import { supabase } from '../lib/supabase.js';
+import { getRoomKey, decryptText } from '../lib/crypto.js';
 
 const POSTS_KEY = 'board.posts';
 const HITS_KEY = 'effigy.hits';
@@ -46,11 +47,15 @@ export default function Ranking({ room }) {
       const hitRows = !e2 && hits ? await Promise.all(hits.map(async (h) => ({ ...h, target: await decryptText(key, h.target) }))) : [];
 
       // 卡1：挨打榜 = 打小人 effigy_hits 按 target 计数（被揍次数）
+      // 云端查询成功时只用云端数据（本地乐观缓存已包含同样的记录，合并会翻倍）；
+      // 仅在查询失败/无数据时回退到本房间本地缓存
       const hitMap = {};
-      hitRows.forEach((h) => { if (h.target) hitMap[h.target] = (hitMap[h.target] || 0) + 1; });
-      // 离线回退：合并本机 hits
-      const localHits = get(HITS_KEY, {});
-      Object.entries(localHits).forEach(([name, count]) => { hitMap[name] = (hitMap[name] || 0) + count; });
+      if (!e2 && hits) {
+        hitRows.forEach((h) => { if (h.target) hitMap[h.target] = (hitMap[h.target] || 0) + 1; });
+      } else {
+        const localHits = get(HITS_KEY + ':' + room, {});
+        Object.entries(localHits).forEach(([name, count]) => { hitMap[name] = (hitMap[name] || 0) + count; });
+      }
 
       // 卡2：吐槽对象榜 = 多人吐槽 board_posts.target 非空计数
       const targetMap = {};
