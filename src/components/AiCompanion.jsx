@@ -1,21 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { SUPABASE_URL } from '../lib/supabase.js';
+import { readImageAsAvatar } from '../lib/image.js';
 
 const SYS = [
   '你是 VentBox 的「AI 解压搭子」——用户的一个嘴替好友，不是客服、不是心理医生、不是班主任。',
   '',
-  '【核心原则（按顺序）】',
-  '1. 先站队：无条件先站用户这边，接住情绪，让用户觉得"对对对！就是这样！"',
-  '2. 跟着一起骂吐槽对象（领导/公司/甲方/奇葩同事），敢损敢玩梗，语气像微信上跟哥们聊天，口语、短句、可以反讽。',
-  '3. 骂完之后，看用户情绪：',
-  '   - 用户只是发泄、语气爽快 → 骂到底就行，收个夸张的尾（如"这种人建议原地退休"）。',
-  '   - 用户委屈/疲惫/自我怀疑 → 骂完后语气转暖，真诚关心一两句，轻轻给个正向引导，但不说教、不讲大道理。',
+  '【唯一任务：跟着用户一起骂】',
+  '1. 用户骂谁，你就跟着骂谁，用词强度和用户保持一致（用户说"狗屎"，你就敢说"简直是坨狗屎"）。',
+  '2. 第一句永远是站队 + 接住情绪，让用户觉得"对对对，你也这么想"。',
+  '3. 只吐槽那个被骂的对象，绝不评论用户本人。',
   '',
-  '【红线（必须守住）】',
-  '- 永远站在用户这边，绝不替被骂的人说话、绝不指责用户、绝不阴阳怪气嘲讽用户本人。',
-  '- 不说教、不灌鸡汤、不用"其实你要理解对方"这类话——这是大忌。',
-  '- 不鼓励违法、暴力、自伤或报复行为。',
-  '- 别太长：像人聊天，每次 2~4 句话就够，别写作文，别列 1234 条。',
+  '【绝对禁止（用户最反感）】',
+  '- 禁止给建议：不要"要不要跟他谈谈""建议你沟通一下""可以试试换个角度"。',
+  '- 禁止说教、禁止讲道理、禁止灌鸡汤、禁止劝人理解对方。',
+  '- 禁止反问引导用户反思。',
+  '- 禁止写长文：**每次只回 1~2 句话，不超过 40 字**，像微信上秒回的那种。',
+  '',
+  '【例外】只有用户明确说"怎么办 / 我好难受 / 求安慰"时，才可以多给一句暖心的安抚；否则就一直陪着骂，不加安抚尾巴。',
 ].join('\n');
 
 function loadKey() {
@@ -39,11 +40,13 @@ export default function AiCompanion() {
   const [customModel, setCustomModel] = useState(''); // 自定义模型名
   const [botName, setBotName] = useState(() => { try { return localStorage.getItem('ventbox:ai_name') || '解压搭子'; } catch { return '解压搭子'; } });
   const [botEmoji, setBotEmoji] = useState(() => { try { return localStorage.getItem('ventbox:ai_emoji') || '🤖'; } catch { return '🤖'; } });
+  const [botAvatar, setBotAvatar] = useState(() => { try { return localStorage.getItem('ventbox:ai_avatar') || ''; } catch { return ''; } });
   const [listening, setListening] = useState(false); // 语音输入中
   const [modelName, setModelName] = useState(''); // 服务端返回的真实模型
   const [ttsOn, setTtsOn] = useState(() => { try { return localStorage.getItem('ventbox:ai_tts') === '1'; } catch { return false; } });
   const listRef = useRef(null);
   const recRef = useRef(null);
+  const inputRef = useRef(null);
   const panelRef = useRef(null);
   // 窗口布局：null=默认底部抽屉；{x,y}=自由浮动；docked=停靠右侧
   const [pos, setPos] = useState(null);
@@ -67,11 +70,24 @@ export default function AiCompanion() {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, open]);
 
+  // 打开 / 回到聊天页时，光标自动进入输入框
+  useEffect(() => {
+    if (open && view === 'chat') setTimeout(() => { inputRef.current && inputRef.current.focus(); }, 60);
+  }, [open, view]);
+
+  // 每次 AI 回复结束后，光标自动回到输入框 —— 可以一直「输入→回车→输入→回车」
+  useEffect(() => {
+    if (!streaming && open && view === 'chat') { inputRef.current && inputRef.current.focus(); }
+  }, [streaming, open, view]);
+
   // 桌面端拖动：按住标题栏拖；松手时若靠近屏幕右缘则自动停靠
   function onHeaderPointerDown(e) {
     if (e.target.closest('button, input, select, a')) return;
     if (!window.matchMedia('(min-width: 768px)').matches) return; // 移动端保持底部抽屉
     const rect = panelRef.current ? panelRef.current.getBoundingClientRect() : { left: 0, top: 0 };
+    // 关键：一开始拖就脱离停靠态，让面板立刻跟手（否则被右下角固定样式锁住，看起来拖不动）
+    setDocked(false);
+    setPos({ x: rect.left, y: rect.top });
     dragRef.current = { sx: e.clientX, sy: e.clientY, px: rect.left, py: rect.top };
     setDragging(true);
     e.preventDefault();
@@ -89,8 +105,8 @@ export default function AiCompanion() {
       dragRef.current = null;
       setDragging(false);
       setPos((p) => {
-        // 面板右缘靠近屏幕右边缘（60px 内）就自动吸附停靠
-        if (p && p.x + 384 > window.innerWidth - 60) { setDocked(true); return null; }
+        // 只有当面板右缘几乎贴住屏幕右缘（24px 内）才吸附停靠，否则保持浮动态，方便再拖走
+        if (p && p.x + 384 > window.innerWidth - 24) { setDocked(true); return null; }
         return p;
       });
     }
@@ -108,8 +124,23 @@ export default function AiCompanion() {
       window.localStorage.setItem('ventbox:ai_model', customModel.trim());
       window.localStorage.setItem('ventbox:ai_name', botName.trim() || '解压搭子');
       window.localStorage.setItem('ventbox:ai_emoji', botEmoji);
+      window.localStorage.setItem('ventbox:ai_avatar', botAvatar);
     } catch { /* ignore */ }
     setView('chat');
+  }
+
+  // 上传搭子头像
+  async function onPickBotAvatar(e) {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      const dataUrl = await readImageAsAvatar(f, 96);
+      setBotAvatar(dataUrl);
+    } catch (err) {
+      setHint(err.message || '头像上传失败');
+      setTimeout(() => setHint(''), 2500);
+    }
   }
 
   // 语音播报：浏览器原生 TTS，0 成本
@@ -228,7 +259,7 @@ export default function AiCompanion() {
         title={`AI ${botName}`}
         className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-40 w-14 h-14 rounded-full bg-rose-500 text-white text-2xl shadow-lg shadow-rose-200 flex items-center justify-center active:scale-95 transition hover:bg-rose-600"
       >
-        {botEmoji}
+        {botAvatar ? <img src={botAvatar} alt="" className="w-14 h-14 rounded-full object-cover" /> : botEmoji}
       </button>
 
       {open && (
@@ -236,23 +267,26 @@ export default function AiCompanion() {
           ref={panelRef}
           className={
             'fixed z-50 bg-white shadow-2xl border-rose-100 flex flex-col ' +
-            (docked
+            (docked && !dragging
               ? 'right-0 top-14 bottom-0 md:bottom-6 w-[24rem] max-w-[92vw] rounded-l-2xl border-l'
               : pos
                 ? 'rounded-2xl border w-[24rem] max-w-[calc(100vw-1rem)] h-[70vh]'
                 : 'inset-x-0 bottom-0 md:max-w-md md:mx-auto rounded-t-2xl border-t h-[74vh]')
           }
-          style={pos && !docked ? { left: pos.x, top: pos.y } : undefined}
+          style={pos && !(docked && !dragging) ? { left: pos.x, top: pos.y } : undefined}
         >
           {/* 头部：桌面端可按住拖动；拖到屏幕右缘自动停靠 */}
           <div
             onPointerDown={onHeaderPointerDown}
             className="flex items-center gap-2 px-4 h-14 border-b border-slate-100 shrink-0 md:cursor-move select-none"
           >
-            <span className="text-xl">{botEmoji}</span>
+            <span className="text-xl">{botAvatar ? <img src={botAvatar} alt="" className="w-7 h-7 rounded-full object-cover" /> : botEmoji}</span>
             <span className="font-bold text-slate-800">AI {botName}</span>
             <div className="flex-1" />
-            <button className="hidden md:flex items-center justify-center w-8 h-8 rounded-lg text-base text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition" onClick={() => { setDocked((d) => !d); setPos(null); }} title={docked ? '收回底部（也可拖标题栏移动）' : '停靠到右侧（也可拖标题栏移动）'}>{docked ? '⇤' : '⇥'}</button>
+            <button className="hidden md:flex items-center gap-1 h-8 px-2.5 rounded-lg text-xs font-bold transition bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 shadow-sm" onClick={() => { setDocked((d) => !d); setPos(null); }} title={docked ? '收回到底部（也可拖标题栏移走）' : '停靠到右侧（也可拖标题栏移动）'}>
+              <span className="text-base leading-none">{docked ? '◀' : '▶'}</span>
+              {docked ? '收回' : '靠右'}
+            </button>
             <button className="flex items-center justify-center w-8 h-8 rounded-lg text-base text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition" onClick={toggleTts} title={ttsOn ? '关闭语音播报' : '开启语音播报'}>{ttsOn ? '🔊' : '🔇'}</button>
             <button className="flex items-center justify-center w-8 h-8 rounded-lg text-base text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition" onClick={openSettings} title="设置">⚙️</button>
             <button className="flex items-center justify-center w-8 h-8 rounded-lg text-base text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition" onClick={() => setOpen(false)} title="关闭">✕</button>
@@ -296,11 +330,22 @@ export default function AiCompanion() {
                 <h4 className="font-semibold text-slate-700 mb-1">🎨 定制你的搭子</h4>
                 <label className="text-xs text-slate-600">名字</label>
                 <input className="input mt-1" maxLength={12} value={botName} placeholder="解压搭子" onChange={(e) => setBotName(e.target.value)} />
-                <label className="text-xs text-slate-600 mt-2 block">头像</label>
-                <div className="flex flex-wrap gap-1.5 mt-1">
+                <label className="text-xs text-slate-600 mt-2 block">头像（选一个 emoji，或上传自己的图片）</label>
+                <div className="flex items-center gap-2 flex-wrap mt-1">
+                  {botAvatar && <img src={botAvatar} alt="已上传头像" className="w-9 h-9 rounded-xl object-cover border border-rose-200" />}
+                  <label className="h-9 px-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 text-xs font-semibold flex items-center cursor-pointer hover:bg-rose-100 transition">
+                    📷 上传图片
+                    <input type="file" accept="image/*" className="hidden" onChange={onPickBotAvatar} />
+                  </label>
+                  {botAvatar && (
+                    <button className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-slate-500 text-xs hover:border-rose-300 transition"
+                      onClick={() => setBotAvatar('')}>清除图片</button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
                   {['🤖', '👾', '🐙', '🦊', '🐸', '🐼', '🦄', '🐰', '🐢', '🦖'].map((e) => (
-                    <button key={e} onClick={() => setBotEmoji(e)}
-                      className={`w-9 h-9 rounded-xl border text-lg flex items-center justify-center transition ${botEmoji === e ? 'bg-rose-500 border-rose-500' : 'bg-white border-slate-200 hover:border-rose-300'}`}>
+                    <button key={e} onClick={() => { setBotEmoji(e); setBotAvatar(''); }}
+                      className={`w-9 h-9 rounded-xl border text-lg flex items-center justify-center transition ${!botAvatar && botEmoji === e ? 'bg-rose-500 border-rose-500' : 'bg-white border-slate-200 hover:border-rose-300'}`}>
                       {e}
                     </button>
                   ))}
@@ -369,6 +414,7 @@ export default function AiCompanion() {
                 <button className={`shrink-0 w-9 h-9 rounded-full border flex items-center justify-center transition ${listening ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-500 border-slate-200 hover:border-rose-300'}`}
                   onClick={toggleMic} title="语音输入（Edge/Chrome）">{listening ? '⏹' : '🎤'}</button>
                 <input
+                  ref={inputRef}
                   className="input flex-1"
                   placeholder={listening ? '正在听…再点一次麦克风结束' : streaming ? '搭子正在回…' : '说点什么解解压吧～（可语音）'}
                   value={input}

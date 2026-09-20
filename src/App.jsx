@@ -35,11 +35,41 @@ export default function App() {
     } catch { /* ignore */ }
     return randomAnon();
   });
+  // 贴纸条 / 提示的全局轻提示
+  const [pinToast, setPinToast] = useState('');
 
   useEffect(() => { addRoom(room); }, [room]);
   useEffect(() => {
     try { localStorage.setItem(ANON_KEY, JSON.stringify(anon)); } catch { /* ignore */ }
   }, [anon]);
+
+  // AI 搭子里的「📌 贴到小人身上」：在全局层处理，即使用户当时不在打小人页也能贴上
+  useEffect(() => {
+    function onPin(e) {
+      const text = String((e && e.detail) || '').trim().slice(0, 30);
+      if (!text) return;
+      let tgt = '';
+      try { tgt = localStorage.getItem('effigy.currentTarget:' + room) || ''; } catch { /* ignore */ }
+      if (!tgt) {
+        setPinToast('先在「打小人」页给对象「贴上去」一个名字，再回来贴纸条');
+        setActive('effigy');
+        return;
+      }
+      try { localStorage.setItem('effigy.note:' + room + ':' + tgt, text); } catch { /* ignore */ }
+      setPinToast(`📌 已贴到「${tgt}」身上`);
+      setActive('effigy');
+      // 若打小人页已经挂载，通知它立刻刷新纸条
+      window.dispatchEvent(new CustomEvent('ventbox:note-applied', { detail: { target: tgt, text } }));
+    }
+    window.addEventListener('ventbox:pin-note', onPin);
+    return () => window.removeEventListener('ventbox:pin-note', onPin);
+  }, [room]);
+
+  useEffect(() => {
+    if (!pinToast) return;
+    const t = setTimeout(() => setPinToast(''), 3000);
+    return () => clearTimeout(t);
+  }, [pinToast]);
 
   const rerollAnon = () => setAnon(randomAnon());
 
@@ -62,11 +92,18 @@ export default function App() {
             title="点击换一个匿名身份"
             className="flex items-center gap-1.5 px-3 h-9 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-600 text-sm font-semibold transition shrink-0"
           >
-            <span>{anon.emoji}</span>
+            <span>{anon.avatar ? <img src={anon.avatar} alt="" className="w-5 h-5 rounded-full object-cover" /> : anon.emoji}</span>
             <span className="hidden md:inline max-w-[9rem] truncate">{anon.name}</span>
           </button>
         </div>
       </header>
+
+      {/* 全局轻提示：贴纸条结果等 */}
+      {pinToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-800 text-white text-sm shadow-xl animate-pop max-w-[90vw] text-center">
+          {pinToast}
+        </div>
+      )}
 
       {/* 全部页签统一 max-w-4xl，切换时宽度不再跳动 */}
       <div className="max-w-4xl mx-auto px-4 py-5 flex gap-5">

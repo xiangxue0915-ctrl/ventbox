@@ -469,12 +469,28 @@ export default function HitEffigy({ room }) {
     // eslint-disable-next-line
   }, [room]);
 
-  // 纸条按 房间+对象 隔离：切对象自动换纸条
+  // 纸条按 房间+对象 隔离：切对象自动换纸条；同时把「当前对象」存起来，
+  // 这样用户在别的页签（如 AI 聊天）点「📌 贴到小人身上」也能贴对人
   useEffect(() => {
     setNote(target ? get(NOTE_KEY + ':' + room + ':' + target, '') : '');
     setNoteInput('');
+    if (target) set('effigy.currentTarget:' + room, target);
     // eslint-disable-next-line
   }, [room, target]);
+
+  // 全局层（App）贴好纸条后通知这里即时刷新
+  useEffect(() => {
+    function onApplied(e) {
+      const d = (e && e.detail) || {};
+      if (d.target && d.target === target) {
+        setNote(String(d.text || '').slice(0, 30));
+        setNameHint(`📌 已把一句话贴到「${d.target}」身上`);
+        setTimeout(() => setNameHint(''), 2600);
+      }
+    }
+    window.addEventListener('ventbox:note-applied', onApplied);
+    return () => window.removeEventListener('ventbox:note-applied', onApplied);
+  }, [target]);
 
   // 接收 AI 搭子发来的「贴到小人身上」事件
   useEffect(() => {
