@@ -398,6 +398,7 @@ export default function HitEffigy({ room }) {
   const [relief, setRelief] = useState('');
   const [mouth, setMouth] = useState(null);
   const [bubble, setBubble] = useState('');
+  const [nameHint, setNameHint] = useState('');
   const [combo, setCombo] = useState(0);
   const [cardImg, setCardImg] = useState('');
   const [hitFx, setHitFx] = useState(null); // { x, y, id }
