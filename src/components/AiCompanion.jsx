@@ -133,8 +133,9 @@ export default function AiCompanion() {
               <div>
                 <label className="text-sm text-slate-600">模型服务商</label>
                 <select className="input mt-1" value={sp} onChange={(e) => setSp(e.target.value)}>
-                  <option value="deepseek">DeepSeek（deepseek-chat，免费额度）</option>
-                  <option value="qwen">通义千问（qwen-plus，免费额度）</option>
+                  <option value="zhipu">智谱 GLM-4-Flash（完全免费，推荐）</option>
+                  <option value="deepseek">DeepSeek（deepseek-chat，需充值）</option>
+                  <option value="qwen">通义千问（qwen-plus，新用户送额度）</option>
                 </select>
               </div>
               <div>
@@ -165,9 +166,9 @@ export default function AiCompanion() {
                     <p>把今天憋屈的事跟我说说吧，我陪你一起吐槽、帮你顺顺气。</p>
                     {!hasKey && (
                       <div className="mt-3 text-xs text-slate-500 bg-white rounded-xl p-3 leading-relaxed">
-                        <p className="font-semibold text-slate-600">💡 想用 AI，先填你自己的模型 key</p>
-                        <p>免费申请、流量算你自己的账号、本工具不收钱。也可以先试试下方的「共享免费池」（有限额）。</p>
-                        <button className="btn-ghost text-xs mt-2" onClick={openSettings}>去设置填 key</button>
+                        <p className="font-semibold text-slate-600">✅ 你现在就能聊，不用填任何 key</p>
+                        <p>当前用的是公共免费模型（Qwen2.5，每天共享限额，先到先得）。想换个更聪明的模型（DeepSeek / 智谱 / 通义都行），去设置里填你自己的 key 即可——免费申请、只存你自己浏览器、流量算你自己的账号。</p>
+                        <button className="btn-ghost text-xs mt-2" onClick={openSettings}>换个模型（可选）</button>
                       </div>
                     )}
                   </div>
