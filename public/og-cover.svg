@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff7ed"/>
+      <stop offset="1" stop-color="#ffe4e6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="510" y="170" width="180" height="160" rx="22" fill="#f43f5e"/>
+  <rect x="540" y="200" width="120" height="14" rx="7" fill="#ffffff"/>
+  <rect x="540" y="240" width="120" height="14" rx="7" fill="#ffffff" opacity="0.7"/>
+  <rect x="540" y="280" width="80" height="14" rx="7" fill="#ffffff" opacity="0.5"/>
+  <text x="600" y="430" font-size="72" text-anchor="middle" fill="#1e293b" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-weight="700">吐槽解压箱</text>
+  <text x="600" y="500" font-size="38" text-anchor="middle" fill="#f43f5e" font-family="sans-serif" font-weight="700">VentBox · 解压专用</text>
+</svg>

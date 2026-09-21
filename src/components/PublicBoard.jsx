@@ -5,6 +5,18 @@ import { getRoomKey, encryptText, decryptText } from '../lib/crypto.js';
 // 公共广场：跨房间共享，room_code 固定为 'PUBLIC'
 const PUBLIC_CODE = 'PUBLIC';
 
+// 房间内帖子用本机房间密钥加密，读出时统一解密（公共广场不加密，保持明文）
+async function decryptPosts(code, rows) {
+  if (code === PUBLIC_CODE) return rows;
+  const key = await getRoomKey(code);
+  if (!key) return rows;
+  return Promise.all(rows.map(async (p) => ({
+    ...p,
+    content: await decryptText(key, p.content),
+    target: await decryptText(key, p.target),
+  })));
+}
+
 function nowStr() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -32,7 +44,7 @@ export default function PublicBoard({ anon, room }) {
         .eq('room_code', code)
         .order('created_at', { ascending: false });
       if (alive) {
-        if (!error) setPosts(data || []);
+        if (!error) setPosts(await decryptPosts(code, data || []));
         setLoaded(true);
       }
     }
@@ -53,23 +65,25 @@ export default function PublicBoard({ anon, room }) {
       .select('*')
       .eq('room_code', code)
       .order('created_at', { ascending: false });
-    if (!error) setPosts(data || []);
+    if (!error) setPosts(await decryptPosts(code, data || []));
   }
 
   async function publish() {
     const c = content.trim();
     if (!c) return;
+    const t = target.trim();
+    const key = code === PUBLIC_CODE ? null : await getRoomKey(code); // 公共广场不加密，房间内加密
     const post = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       room_code: code,
       anon_name: anon.name,
       anon_emoji: anon.emoji,
-      content: c,
-      target: target.trim(),
+      content: key ? await encryptText(c, key) : c,
+      target: key ? await encryptText(t, key) : t,
       created_at: nowStr(),
       likes: 0,
     };
-    setPosts((p) => [post, ...p]); // 乐观更新
+    setPosts((p) => [{ ...post, content: c, target: t }, ...p]); // 乐观更新（作者本机先看到明文）
     setContent(''); setTarget('');
     await supabase.from('board_posts').insert(post);
     refresh();

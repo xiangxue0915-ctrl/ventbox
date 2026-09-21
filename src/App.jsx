@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
-import TreeHole from './components/TreeHole.jsx';
-import HitEffigy from './components/HitEffigy.jsx';
-import PublicBoard from './components/PublicBoard.jsx';
-import Ranking from './components/Ranking.jsx';
-import AnonymousPanel from './components/AnonymousPanel.jsx';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import RoomBar from './components/RoomBar.jsx';
 import AiCompanion from './components/AiCompanion.jsx';
 import { randomAnon } from './lib/anon.js';
 import { getRoomList, getCurrentRoom, genRoomCode, addRoom } from './lib/rooms.js';
+
+// 重 Tab 按需加载，减小首屏 bundle（打小人为首屏默认，保持静态导入）
+const TreeHole = lazy(() => import('./components/TreeHole.jsx'));
+const HitEffigy = lazy(() => import('./components/HitEffigy.jsx'));
+const PublicBoard = lazy(() => import('./components/PublicBoard.jsx'));
+const Ranking = lazy(() => import('./components/Ranking.jsx'));
+const AnonymousPanel = lazy(() => import('./components/AnonymousPanel.jsx'));
 
 const ANON_KEY = 'anon.identity';
 
@@ -90,6 +92,7 @@ export default function App() {
           <button
             onClick={rerollAnon}
             title="点击换一个匿名身份"
+            aria-label="更换匿名身份"
             className="flex items-center gap-1.5 px-3 h-9 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-600 text-sm font-semibold transition shrink-0"
           >
             <span>{anon.avatar ? <img src={anon.avatar} alt="" className="w-5 h-5 rounded-full object-cover" /> : anon.emoji}</span>
@@ -100,7 +103,7 @@ export default function App() {
 
       {/* 全局轻提示：贴纸条结果等 */}
       {pinToast && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-800 text-white text-sm shadow-xl animate-pop max-w-[90vw] text-center">
+        <div role="status" aria-live="polite" className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-800 text-white text-sm shadow-xl animate-pop max-w-[90vw] text-center">
           {pinToast}
         </div>
       )}
@@ -127,16 +130,18 @@ export default function App() {
 
         {/* ===== 主内容区：所有页签统一阅读宽度，杜绝切页跳动 ===== */}
         <main className="flex-1 min-w-0 pb-24 md:pb-6">
-          <div className="max-w-2xl">
-            {active === 'treehole' && <TreeHole />}
-            {active === 'effigy' && <HitEffigy room={room} />}
-            {active === 'board' && <PublicBoard anon={anon} room={room} />}
-            {active === 'ranking' && <Ranking room={room} />}
-            {active === 'anon' && <AnonymousPanel anon={anon} onReroll={rerollAnon} onEdit={setAnon} />}
-            <footer className="text-xs text-slate-400 mt-8">
-              多人房间 · 数据云端实时同步 · 全程匿名 · 私密树洞仍仅存本机
-            </footer>
-          </div>
+          <Suspense fallback={<div className="card py-10 text-center text-slate-400">加载中…</div>}>
+            <div className="max-w-2xl">
+              {active === 'treehole' && <TreeHole />}
+              {active === 'effigy' && <HitEffigy room={room} />}
+              {active === 'board' && <PublicBoard anon={anon} room={room} />}
+              {active === 'ranking' && <Ranking room={room} />}
+              {active === 'anon' && <AnonymousPanel anon={anon} onReroll={rerollAnon} onEdit={setAnon} />}
+              <footer className="text-xs text-slate-400 mt-8">
+                多人房间 · 数据云端实时同步 · 全程匿名 · 私密树洞仍仅存本机
+              </footer>
+            </div>
+          </Suspense>
         </main>
       </div>
 

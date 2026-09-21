@@ -20,7 +20,15 @@ const SYS = [
 ].join('\n');
 
 function loadKey() {
-  try { return window.localStorage.getItem('ventbox:ai_key') || ''; } catch { return ''; }
+  try {
+    let k = window.sessionStorage.getItem('ventbox:ai_key') || '';
+    if (!k) {
+      // 一次性迁移：把旧版落在 localStorage 的 key 搬到 sessionStorage（关标签页即失效，不再持久化到磁盘）
+      const old = window.localStorage.getItem('ventbox:ai_key') || '';
+      if (old) { window.sessionStorage.setItem('ventbox:ai_key', old); window.localStorage.removeItem('ventbox:ai_key'); k = old; }
+    }
+    return k;
+  } catch { return ''; }
 }
 function loadProvider() {
   try { return window.localStorage.getItem('ventbox:ai_provider') || 'deepseek'; } catch { return 'deepseek'; }
@@ -119,7 +127,7 @@ export default function AiCompanion() {
   function saveSettings() {
     try {
       window.localStorage.setItem('ventbox:ai_provider', sp);
-      window.localStorage.setItem('ventbox:ai_key', sk.trim());
+      window.sessionStorage.setItem('ventbox:ai_key', sk.trim());
       window.localStorage.setItem('ventbox:ai_baseurl', customBase.trim());
       window.localStorage.setItem('ventbox:ai_model', customModel.trim());
       window.localStorage.setItem('ventbox:ai_name', botName.trim() || '解压搭子');
