@@ -1,6 +1,7 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
 import RoomBar from './components/RoomBar.jsx';
 import AiCompanion from './components/AiCompanion.jsx';
+import Onboarding from './components/Onboarding.jsx';
 import { randomAnon } from './lib/anon.js';
 import { getRoomList, getCurrentRoom, genRoomCode, addRoom } from './lib/rooms.js';
 
@@ -161,6 +162,8 @@ export default function App() {
         ))}
       </nav>
 
+      {/* 新人首次访问的 3 步引导弹窗（只看一次） */}
+      <Onboarding />
       {/* AI 解压搭子：右下角浮窗（自包含，不动底部导航格数） */}
       <AiCompanion />
     </div>
