@@ -31,6 +31,14 @@ export default function App() {
     const list = getRoomList();
     return getCurrentRoom() || list[0] || addRoom(genRoomCode());
   });
+  // 房间丢失恢复提示：本机记录被微信/浏览器清理、被迫「静默新建随机房」时置位；
+  // 通过 ?room= 邀请链接进入时不新建随机房，故不弹提示。
+  const [freshStart, setFreshStart] = useState(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get('room');
+    if (fromUrl) return false;
+    const list = getRoomList();
+    return !(getCurrentRoom() || list[0]);
+  });
   // 全局匿名身份：持久化，刷新不变；可在胶囊处一键切换
   const [anon, setAnon] = useState(() => {
     try {

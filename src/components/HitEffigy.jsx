@@ -579,16 +579,10 @@ export default function HitEffigy({ room }) {
     const rows = await fetchDecryptedRows(room);
     if (!rows) return;
     setRows(rows);
-    // 对齐本地乐观计数：若云端某对象总数比本机少（云端被清过部分数据），
-    // 以云端为准重置本机，避免「虚高」永久驻留
-    const agg = aggregate(rows);
-    const nextLocal = { ...localHits };
-    let changed = false;
-    for (const t of Object.keys(agg)) {
-      const sTotal = agg[t].total;
-      if (sTotal > 0 && sTotal < (nextLocal[t] || 0)) { nextLocal[t] = sTotal; changed = true; }
-    }
-    if (changed) { setLocalHits(nextLocal); set(hitsKey, nextLocal); }
+    // 注意：不做「本地乐观计数向下对齐云端」。显示层用 Math.max(云端聚合, 本机乐观)
+    // 已保证计数不落后；而 refresh 的云端快照可能落后于本机尚未落库的击打
+    //（网络往返 / 并发 refresh），若在此把 localHits 向下重置为旧快照，会回拨计数、
+    // 复活「连打计数滞后」Bug。罕见场景「云端被清」的虚高由 max 自然兜住，不影响正确性。
   }
 
   const shared = loaded ? aggregate(rows) : null;
@@ -648,15 +642,21 @@ export default function HitEffigy({ room }) {
       return;
     }
     const prop = PROPS.find((x) => x.id === activeProp) || PROPS[0];
-    // 离线乐观更新
-    const nextHits = { ...localHits, [target]: (localHits[target] || 0) + 1 };
-    const curD = localDetail[target] || { parts: {}, pp: {} };
-    const nextParts = { ...curD.parts, [part]: (curD.parts[part] || 0) + 1 };
-    const k = part + '__' + prop.id;
-    const nextPP = { ...curD.pp, [k]: (curD.pp[k] || 0) + 1 };
-    const nextDetail = { ...localDetail, [target]: { parts: nextParts, pp: nextPP } };
-    setLocalHits(nextHits); setLocalDetail(nextDetail);
-    set(hitsKey, nextHits); set(detailKey, nextDetail);
+    // 离线乐观更新（用函数式更新，连点同一 tick 也不丢计数）
+    setLocalHits((h) => {
+      const nh = { ...h, [target]: (h[target] || 0) + 1 };
+      set(hitsKey, nh);
+      return nh;
+    });
+    setLocalDetail((d) => {
+      const curD = d[target] || { parts: {}, pp: {} };
+      const nextParts = { ...curD.parts, [part]: (curD.parts[part] || 0) + 1 };
+      const k = part + '__' + prop.id;
+      const nextPP = { ...curD.pp, [k]: (curD.pp[k] || 0) + 1 };
+      const nd = { ...d, [target]: { parts: nextParts, pp: nextPP } };
+      set(detailKey, nd);
+      return nd;
+    });
     // 表现层
     playSmack(prop.dmg);
     const m = ['啊', '哦', '呜'][Math.floor(Math.random() * 3)];

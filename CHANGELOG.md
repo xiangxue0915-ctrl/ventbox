@@ -2,6 +2,10 @@
 
 本项目遵循语义化版本（MAJOR.MINOR.PATCH）。日期为约略记录。
 
+## [1.3.3] — 2026-09-22 · QA 独立复查修复
+- **问题2 补全（关键）**：1.3.2 中 `App.jsx` 的 `freshStart` 与 `RoomBar.jsx` 的 `inviteLink` 仅被 JSX/onClick 引用却**从未声明**，导致首屏 `ReferenceError` 白屏、点击「复制链接」报错。本次补上 `freshStart` 状态（静默新建随机房时置位，经 `?room=` 进入不弹提示）与 `inviteLink` 异步 state（经 `crypto.js` 的 `ensureRoomKeyB64()` 生成 `?room=xxx#k=yyy` 邀请链接，hash 在 query 之后）。
+- **问题5 防回归**：移除 `HitEffigy.jsx` 中 `refresh()`「本地乐观计数无条件向下对齐云端」的逻辑。该逻辑在快速连打时若遇到落后的云端快照（网络往返 / 并发 refresh），会把 `localHits` 重置为落后值，与 `Math.max(云端, 本机)` 叠加后造成永久「连打计数滞后」；删掉后仍由 `max` 保证计数不落后。另将 `doHit` 的乐观更新改为函数式，避免同一 tick 连点丢计数。
+
 ## [1.3.2] — 2026-09-22 · 线上 5 项 Bug 修复
 - **问题1｜通缉墙/打击榜满屏 `enc:xxxx`**：`HitEffigy.jsx` 首屏 `load()` 之前不解密，导致按密文分组、每条各 1 下。新增 `fetchDecryptedRows()` 统一供 `load()` 与 `refresh()` 解密；无法解密的历史密文（仍为 `enc:` 前缀）全部归并为常量 `UNKNOWN_TARGET = '❓未知对象'` 一条，自动选中优先非「未知」对象，且对伪对象禁止打击。
 - **问题1/2｜邀请链接不带房间钥匙**：`RoomBar.jsx` 的 `inviteLink` 改为异步 state，`useEffect([room])` 内通过 `crypto.js` 新增的 `ensureRoomKeyB64()` 取得钥匙，链接格式升级为 `?room=xxx#k=yyy`（hash 在 query 之后）。同事点链接即可拿到钥匙、能解密也能被正确解密；微信清 localStorage 后凭链接可恢复房间。

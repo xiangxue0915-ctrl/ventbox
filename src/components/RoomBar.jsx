@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { genRoomCode, getRoomList, addRoom, removeRoom } from '../lib/rooms.js';
 import { supabase } from '../lib/supabase.js';
+import { ensureRoomKeyB64 } from '../lib/crypto.js';
 
 // 拉取每个房间的战绩概览（打了几下 / 吐槽几条）
 function useRoomCounts(list) {
@@ -46,6 +47,22 @@ export default function RoomBar({ room, onChange }) {
     return () => clearTimeout(t);
   }, [firstHint]);
   const counts = useRoomCounts(list);
+
+  // 邀请链接：随房间密钥异步生成，链接格式 ?room=xxx#k=yyy（hash 在 query 之后，
+  // 与 crypto.js 的 /[#&]k=([^&]+)/ 匹配；老房间无钥匙则不带 #k=）。同事点开即可拿到钥匙。
+  const [inviteLink, setInviteLink] = useState('');
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const key = await ensureRoomKeyB64(room);
+      const base = window.location.origin + window.location.pathname;
+      const link = key
+        ? `${base}?room=${encodeURIComponent(room)}#k=${encodeURIComponent(key)}`
+        : `${base}?room=${encodeURIComponent(room)}`;
+      if (alive) setInviteLink(link);
+    })();
+    return () => { alive = false; };
+  }, [room]);
 
   // 确保当前房间在列表里
   useEffect(() => {
