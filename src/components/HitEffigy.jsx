@@ -951,7 +951,7 @@ export default function HitEffigy({ room }) {
                 {/* 落地阴影：受击时压扁增强“砸下去”感（在身体组之前、更底层） */}
                 <ellipse cx="80" cy="212" rx={lurch ? 26 : 34} ry="6" fill="#000" opacity={lurch ? 0.2 : 0.12} />
                 {/* lurch：受击 3D 前倾后仰（外层 g，CSS 3D transform；perspective 在父容器 .shrink-0 上） */}
-                <g style={{ transition: 'transform .12s ease-out', transform: lurch ? 'rotateX(14deg) translateY(4px)' : 'none', transformOrigin: '50% 100%', transformBox: 'view-box' }}>
+                <g style={{ transition: 'transform .12s ease-out', transform: lurch ? 'perspective(600px) rotateX(14deg) translateY(4px)' : 'none', transformOrigin: '50% 100%', transformBox: 'view-box' }}>
                 <g transform={st.down ? 'rotate(-18 80 120)' : ''}>
               {/* 四肢（可摆动，末端圆头） */}
               {(() => { const [a, b, c, d] = limbLine('armL'); return <line x1={a} y1={b} x2={c} y2={d} stroke="#e7d8a8" strokeWidth="6" strokeLinecap="round" />; })()}
