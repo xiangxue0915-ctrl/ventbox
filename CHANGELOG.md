@@ -2,6 +2,13 @@
 
 本项目遵循语义化版本（MAJOR.MINOR.PATCH）。日期为约略记录。
 
+## [1.3.4] — 2026-09-22 · 伪立体纸人 + 武器命中飞行动画 + 语音修复
+- **伪立体纸人（faux-3D，纯 SVG/CSS）**：主视图身体/头改为「深色背板挤出 + 径向渐变亮面 + 高光点」的体积感画法；底部新增落地阴影（受击时压扁增强「砸下去」感）；受击新增 3D `lurch` 前倾后仰（CSS `rotateX`，`perspective` 置于纸人父容器），与 `animate-shake` 并存。`st.down` 瘫倒旋转保留。战果图 canvas `drawEffigy` 轻量同步：身体/头改为径向渐变 + 底部半透明黑椭圆影。
+- **武器命中飞行动画（overlay 层）**：`gun`/`needle` 标记 `ranged`，其余默认近战。`doHit` 时序重构——先立即做乐观计数 + 加密落库（数据一致性不等动画），再发射飞行体；子弹到达（远程 ~320ms / 近战 ~260ms）才触发受击表现（pose/血/飘字），多 shot 各自独立移除。远程画红点子弹 + 拖尾 + 枪口火光；近战道具大 emoji 从右侧飞入并轻微旋转。overlay 绝对定位、`pointer-events:none`，点击层仍在 SVG 内可点。
+- **语音 Bug 修复（AiCompanion）**：
+  - 话筒 `toggleMic`：无 `SpeechRecognition` 时不再弹「不支持」卡死，改为聚焦输入框并提示「用输入法里的🎤语音键说话」；有 SR 时加 try 包 `start()` + 15s 看门狗（`onend`/`onerror` 内 `clearTimeout`），解决移动端微信 WebView 里 `onend` 永不触发导致 `listening` 卡 true。
+  - 喇叭 `speak`：开头 `speechSynthesis.resume()`（修初始 suspended 不出声）；尽量选中文 voice；新增「🔊 读出来」按钮（每条 assistant 回复气泡下方），用户主动点即播，不受 tts 开关限制。`toggleTts` 仍写 `localStorage`、关时 `cancel()`。
+
 ## [1.3.3] — 2026-09-22 · QA 独立复查修复
 - **问题2 补全（关键）**：1.3.2 中 `App.jsx` 的 `freshStart` 与 `RoomBar.jsx` 的 `inviteLink` 仅被 JSX/onClick 引用却**从未声明**，导致首屏 `ReferenceError` 白屏、点击「复制链接」报错。本次补上 `freshStart` 状态（静默新建随机房时置位，经 `?room=` 进入不弹提示）与 `inviteLink` 异步 state（经 `crypto.js` 的 `ensureRoomKeyB64()` 生成 `?room=xxx#k=yyy` 邀请链接，hash 在 query 之后）。
 - **问题5 防回归**：移除 `HitEffigy.jsx` 中 `refresh()`「本地乐观计数无条件向下对齐云端」的逻辑。该逻辑在快速连打时若遇到落后的云端快照（网络往返 / 并发 refresh），会把 `localHits` 重置为落后值，与 `Math.max(云端, 本机)` 叠加后造成永久「连打计数滞后」；删掉后仍由 `max` 保证计数不落后。另将 `doHit` 的乐观更新改为函数式，避免同一 tick 连点丢计数。

@@ -54,6 +54,7 @@ export default function AiCompanion() {
   const [ttsOn, setTtsOn] = useState(() => { try { return localStorage.getItem('ventbox:ai_tts') === '1'; } catch { return false; } });
   const listRef = useRef(null);
   const recRef = useRef(null);
+  const recWdRef = useRef(null); // 语音识别看门狗定时器
   const inputRef = useRef(null);
   const panelRef = useRef(null);
   // 窗口布局：null=默认底部抽屉；{x,y}=自由浮动；docked=停靠右侧
@@ -152,13 +153,35 @@ export default function AiCompanion() {
   }
 
   // 语音播报：浏览器原生 TTS，0 成本
-  function speak(text) {
+  // force=true 时忽略 tts 开关（用户主动点「🔊 读出来」即播）
+  function speak(text, force) {
     try {
-      if (localStorage.getItem('ventbox:ai_tts') !== '1') return;
+      if (!force && localStorage.getItem('ventbox:ai_tts') !== '1') return;
+      if (!text) return;
+      // 部分浏览器初始 speechSynthesis 处于 suspended，不出声 —— 先 resume 一下
+      try { window.speechSynthesis.resume(); } catch { /* ignore */ }
       const u = new SpeechSynthesisUtterance(String(text).slice(0, 300));
       u.lang = 'zh-CN';
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
+      let voice = null;
+      const vs = window.speechSynthesis.getVoices();
+      voice = vs.find((v) => /zh|Chinese/i.test(v.lang || v.name)) || vs[0] || null;
+      u.voice = voice;
+      u.onend = () => {};
+      let spoke = false;
+      const fire = () => {
+        if (spoke) return; spoke = true;
+        try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch { /* ignore */ }
+      };
+      fire();
+      // getVoices 可能异步：voices 就绪后若还没拿到中文 voice，再补一次带正确 voice 的播报
+      if (!voice && typeof window.speechSynthesis.onvoiceschanged === 'function') {
+        window.speechSynthesis.onvoiceschanged = () => {
+          const vs2 = window.speechSynthesis.getVoices();
+          const v2 = vs2.find((v) => /zh|Chinese/i.test(v.lang || v.name)) || vs2[0] || null;
+          if (v2) { u.voice = v2; fire(); }
+          window.speechSynthesis.onvoiceschanged = null;
+        };
+      }
     } catch { /* ignore */ }
   }
   function toggleTts() {
@@ -171,8 +194,18 @@ export default function AiCompanion() {
   // 语音输入：浏览器原生 SpeechRecognition（Edge/Chrome 支持）
   function toggleMic() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { setHint('当前浏览器不支持语音输入，请用 Edge 或 Chrome'); return; }
-    if (listening) { try { recRef.current && recRef.current.stop(); } catch { /* ignore */ } return; }
+    // 移动端微信 WebView 等环境可能完全没有 SpeechRecognition：
+    // 实测手机键盘自带的🎤语音键能正常输入，故聚焦输入框并提示用键盘语音键，而不是卡死。
+    if (!SR) {
+      try { inputRef.current && inputRef.current.focus(); } catch { /* ignore */ }
+      setHint('已打开键盘，用输入法里的🎤语音键说话即可');
+      return;
+    }
+    if (listening) {
+      try { recRef.current && recRef.current.stop(); } catch { /* ignore */ }
+      if (recWdRef.current) { clearTimeout(recWdRef.current); recWdRef.current = null; }
+      return;
+    }
     try {
       const rec = new SR();
       rec.lang = 'zh-CN';
@@ -185,12 +218,29 @@ export default function AiCompanion() {
         }
         if (txt) setInput((prev) => (prev ? prev + ' ' : '') + txt.trim());
       };
-      rec.onend = () => setListening(false);
-      rec.onerror = () => setListening(false);
+      rec.onend = () => {
+        if (recWdRef.current) { clearTimeout(recWdRef.current); recWdRef.current = null; }
+        setListening(false);
+      };
+      rec.onerror = () => {
+        if (recWdRef.current) { clearTimeout(recWdRef.current); recWdRef.current = null; }
+        setListening(false);
+      };
       recRef.current = rec;
       setListening(true);
       rec.start();
-    } catch { setListening(false); }
+      // 看门狗：15 秒内若 onend/onerror 都没触发（部分 WebView 卡死），强制结束并提示，避免 listening 卡 true 关不掉也输不进字
+      if (recWdRef.current) clearTimeout(recWdRef.current);
+      recWdRef.current = setTimeout(() => {
+        try { recRef.current && recRef.current.stop(); } catch { /* ignore */ }
+        recWdRef.current = null;
+        setListening(false);
+        setHint('语音识别结束（若没出字，可再点一次或改用键盘语音键）');
+      }, 15000);
+    } catch {
+      if (recWdRef.current) { clearTimeout(recWdRef.current); recWdRef.current = null; }
+      setListening(false);
+    }
   }
 
   // 把某句回复贴到打小人页当前对象身上
@@ -398,10 +448,16 @@ export default function AiCompanion() {
                       {m.content || '…'}
                     </div>
                     {m.role === 'assistant' && m.content && !String(m.content).startsWith('⚠️') && (
-                      <button className="text-[11px] text-slate-400 hover:text-rose-500 mt-0.5" onClick={() => pinToEffigy(m.content)}
-                        title="把这句话贴到打小人页当前对象身上">
-                        📌 贴到小人身上
-                      </button>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <button className="text-[11px] text-slate-400 hover:text-rose-500" onClick={() => pinToEffigy(m.content)}
+                          title="把这句话贴到打小人页当前对象身上">
+                          📌 贴到小人身上
+                        </button>
+                        <button className="text-[11px] text-slate-400 hover:text-rose-500" onClick={() => speak(m.content, true)}
+                          title="🔊 读出来">
+                          🔊 读出来
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}

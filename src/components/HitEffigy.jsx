@@ -28,9 +28,9 @@ const CARD = { w: 320, scale: 2, ox: (320 - 160 * 2) / 2, oy: 78 };
 // 说明：统一走「卡通解压」路线，不使用血腥/酷刑类元素
 const PROPS = [
   { id: 'hammer', name: '榔头', icon: '🔨', dmg: 2 },
-  { id: 'needle', name: '针', icon: '📍', dmg: 1 },
+  { id: 'needle', name: '针', icon: '📍', dmg: 1, ranged: true },
   { id: 'knife', name: '刀', icon: '🔪', dmg: 2 },
-  { id: 'gun', name: '枪', icon: '🔫', dmg: 3 },
+  { id: 'gun', name: '枪', icon: '🔫', dmg: 3, ranged: true },
   { id: 'slipper', name: '拖鞋', icon: '👡', dmg: 1 },
   { id: 'pan', name: '平底锅', icon: '🍳', dmg: 2 },
   { id: 'chain', name: '铁链', icon: '⛓️', dmg: 2 },
@@ -384,6 +384,9 @@ function drawEffigy(ctx, { target, total, marks, mouth, down, crying, pose = {},
   const P = (x, y) => [ox + x * s, oy + y * s];
   ctx.save();
   ctx.translate(ox, oy);
+  // 落地阴影（伪立体轻量同步：半透明黑椭圆，与 SVG 主视图风格一致）
+  ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.beginPath(); ctx.ellipse(80 * s, 212 * s, 34 * s, 6 * s, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
   if (down) { ctx.translate(80 * s, 120 * s); ctx.rotate(-18 * Math.PI / 180); ctx.translate(-80 * s, -120 * s); }
   // 四肢（先画，位于身体之下）
   ctx.strokeStyle = '#e7d8a8'; ctx.lineWidth = 6 * s; ctx.lineCap = 'round';
@@ -396,12 +399,17 @@ function drawEffigy(ctx, { target, total, marks, mouth, down, crying, pose = {},
     const a = P(x1, y1), b = P(nx, ny);
     ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
   });
-  // 身体
+  // 身体（伪立体轻量同步：径向渐变叠加，保留受伤变色）
   const [bx, by] = P(BODY.body.x, BODY.body.y);
-  ctx.fillStyle = marks.bodyFill; ctx.strokeStyle = '#e7d8a8'; ctx.lineWidth = 2 * s;
+  const bgrad = ctx.createRadialGradient(bx + 14 * s, by + 18 * s, 4 * s, bx + (BODY.body.w * s) / 2, by + (BODY.body.h * s) / 2, BODY.body.w * s);
+  bgrad.addColorStop(0, '#fffdf5'); bgrad.addColorStop(1, marks.bodyFill);
+  ctx.fillStyle = bgrad; ctx.strokeStyle = '#e7d8a8'; ctx.lineWidth = 2 * s;
   roundRect(ctx, bx, by, BODY.body.w * s, BODY.body.h * s, BODY.body.r * s); ctx.fill(); ctx.stroke();
   // 头
   const [hx, hy] = P(BODY.head.cx, BODY.head.cy);
+  const hgrad = ctx.createRadialGradient(hx - 10 * s, hy - 12 * s, 3 * s, hx, hy, BODY.head.r * s);
+  hgrad.addColorStop(0, '#fffdf5'); hgrad.addColorStop(1, marks.bodyFill);
+  ctx.fillStyle = hgrad;
   ctx.beginPath(); ctx.arc(hx, hy, BODY.head.r * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   // 眼
   if (down) {
@@ -477,6 +485,58 @@ function statusOf(total) {
   return { text: '瘫倒不起', crying: true, down: true };
 }
 
+// 武器/子弹飞行体（overlay 层用绝对定位 div + CSS transform，比 SVG 跨坐标系更顺）
+// 挂载后下一帧再位移，触发 CSS transition 飞向目标
+function WeaponShot({ shot }) {
+  const [go, setGo] = useState(false);
+  useEffect(() => {
+    const r = requestAnimationFrame(() => setGo(true));
+    return () => cancelAnimationFrame(r);
+  }, []);
+  const TRAVEL = shot.melee ? 260 : 320;
+  const dx = shot.to.x - shot.from.x;
+  const dy = shot.to.y - shot.from.y;
+  if (shot.melee) {
+    // 近战：道具大 emoji 直接飞向目标并轻微旋转
+    return (
+      <div
+        className="absolute will-change-transform"
+        style={{
+          left: shot.from.x, top: shot.from.y,
+          transform: go ? `translate(${dx}px, ${dy}px) rotate(380deg)` : 'translate(0px, 0px)',
+          transition: `transform ${TRAVEL}ms ease-out`,
+          fontSize: 30, lineHeight: 1, pointerEvents: 'none',
+        }}
+      >
+        {shot.icon}
+      </div>
+    );
+  }
+  // 远程：枪口火光 + 红点子弹 + 拖尾
+  return (
+    <>
+      <div
+        className="absolute"
+        style={{ left: shot.from.x - 8, top: shot.from.y - 8, fontSize: 16, animation: 'effMuzzle .3s ease-out forwards', pointerEvents: 'none' }}
+      >🔥</div>
+      <div
+        className="absolute will-change-transform"
+        style={{
+          left: shot.from.x, top: shot.from.y,
+          transform: go ? `translate(${dx}px, ${dy}px)` : 'translate(0px, 0px)',
+          transition: `transform ${TRAVEL}ms ease-in`,
+          pointerEvents: 'none',
+        }}
+      >
+        {/* 子弹：红点 */}
+        <span style={{ position: 'absolute', left: -2, top: -2, width: 4, height: 4, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 6px 2px rgba(239,68,68,.7)' }} />
+        {/* 拖尾 */}
+        <span style={{ position: 'absolute', left: -16, top: -1, width: 16, height: 2, background: 'linear-gradient(90deg, transparent, #ef4444)', borderRadius: 2 }} />
+      </div>
+    </>
+  );
+}
+
 export default function HitEffigy({ room }) {
   const [rows, setRows] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -505,6 +565,11 @@ export default function HitEffigy({ room }) {
   const poseTimerRef = useRef(null);
   const svgRef = useRef(null);
   const canvasRef = useRef(null);
+  // 武器/子弹飞行动画
+  const [lurch, setLurch] = useState(false); // 受击 3D 前倾后仰
+  const [shots, setShots] = useState([]); // 飞行中的武器/子弹 [{ id, propId, icon, from, to, melee }]
+  const stageRef = useRef(null); // 舞台卡片 ref，用于把 viewBox 坐标映射到卡片内像素坐标
+  const shotSeqRef = useRef(0); // shot 自增 id
 
   useEffect(() => {
     let alive = true;
@@ -632,7 +697,37 @@ export default function HitEffigy({ room }) {
     }
   }
 
+  // 受击表现层（抽离）：武器/子弹到达后才调用，保证「到达瞬间才出受击」（pose/血/飘字同步）
+  function applyImpact(part, prop, fx) {
+    playSmack(prop.dmg);
+    const m = ['啊', '哦', '呜'][Math.floor(Math.random() * 3)];
+    setMouth(m); playVoice(m);
+    setBubble(CRY_WORDS[Math.floor(Math.random() * CRY_WORDS.length)]);
+    setShaking(true); setTimeout(() => setShaking(false), 500);
+    // 受击 3D 前倾后仰（lurch），与 shaking 的 animate-shake 并存
+    setLurch(true); setTimeout(() => setLurch(false), 500);
+    setRelief(RELIEF_LINES[Math.floor(Math.random() * RELIEF_LINES.length)]);
+    // 特效位置：优先用真实鼠标坐标（viewBox 坐标），无坐标时退回部位锚点
+    const anchors = PART_ANCHORS[part] || [[80, 110]];
+    const p = fx && Number.isFinite(fx.x) ? fx : { x: anchors[0][0], y: anchors[0][1] };
+    setHitFx({ x: p.x, y: p.y, id: Date.now() });
+    setPose(limbPose(part));
+    if (poseTimerRef.current) clearTimeout(poseTimerRef.current);
+    poseTimerRef.current = setTimeout(() => setPose({}), 380);
+    const now = Date.now();
+    const isCombo = now - lastHitRef.current < 900;
+    lastHitRef.current = now;
+    setCombo(isCombo ? (c) => c + 1 : 1);
+    // 飘字：第一人称痛感，随机左右飘出，连击可多条同屏叠飘
+    const fl = { id: now + Math.random(), text: pickFlavor(prop.id, part), side: Math.random() < 0.5 ? 'left' : 'right', top: 14 + Math.random() * 56 };
+    setFloaters((prev) => [...prev.slice(-3), fl]);
+    clearTimeout(floatTimerRef.current[fl.id]);
+    floatTimerRef.current[fl.id] = setTimeout(() => setFloaters((prev) => prev.filter((x) => x.id !== fl.id)), 1800);
+  }
+
   // 依据「点击部位」推断：用鼠标实际坐标定位特效（100% 对得上）
+  // 时序：立即做乐观计数 + 加密落库（数据一致性不等动画）；同时发射武器飞行动画，
+  // 子弹到达（TRAVEL_MS）后才触发受击表现，多个 shot 各自独立移除，互不干扰。
   async function doHit(part, fx) {
     if (!target) return;
     // 「未知对象」是丢失钥匙的历史密文归并出的伪对象，不允许打击，避免把密文再加密一层写库
@@ -657,29 +752,34 @@ export default function HitEffigy({ room }) {
       set(detailKey, nd);
       return nd;
     });
-    // 表现层
-    playSmack(prop.dmg);
-    const m = ['啊', '哦', '呜'][Math.floor(Math.random() * 3)];
-    setMouth(m); playVoice(m);
-    setBubble(CRY_WORDS[Math.floor(Math.random() * CRY_WORDS.length)]);
-    setShaking(true); setTimeout(() => setShaking(false), 500);
-    setRelief(RELIEF_LINES[Math.floor(Math.random() * RELIEF_LINES.length)]);
-    // 特效位置：优先用真实鼠标坐标（viewBox 坐标），无坐标时退回部位锚点
-    const anchors = PART_ANCHORS[part] || [[80, 110]];
-    const p = fx && Number.isFinite(fx.x) ? fx : { x: anchors[0][0], y: anchors[0][1] };
-    setHitFx({ x: p.x, y: p.y, id: Date.now() });
-    setPose(limbPose(part));
-    if (poseTimerRef.current) clearTimeout(poseTimerRef.current);
-    poseTimerRef.current = setTimeout(() => setPose({}), 380);
-    const now = Date.now();
-    const isCombo = now - lastHitRef.current < 900;
-    lastHitRef.current = now;
-    setCombo(isCombo ? (c) => c + 1 : 1);
-    // 飘字：第一人称痛感，随机左右飘出，连击可多条同屏叠飘
-    const fl = { id: now + Math.random(), text: pickFlavor(prop.id, part), side: Math.random() < 0.5 ? 'left' : 'right', top: 14 + Math.random() * 56 };
-    setFloaters((prev) => [...prev.slice(-3), fl]);
-    clearTimeout(floatTimerRef.current[fl.id]);
-    floatTimerRef.current[fl.id] = setTimeout(() => setFloaters((prev) => prev.filter((x) => x.id !== fl.id)), 1800);
+    // 武器/子弹飞行：把点击的 viewBox 坐标映射到舞台卡片内的像素坐标
+    const melee = !prop.ranged;
+    const TRAVEL = melee ? 260 : 320;
+    const id = ++shotSeqRef.current;
+    const stageEl = stageRef.current;
+    const svgEl = svgRef.current;
+    const stageW = stageEl ? stageEl.clientWidth : 160;
+    const stageH = stageEl ? stageEl.clientHeight : 240;
+    let to;
+    try {
+      if (svgEl && stageEl) {
+        const rect = svgEl.getBoundingClientRect();
+        const sRect = stageEl.getBoundingClientRect();
+        const lx = fx && Number.isFinite(fx.x) ? fx.x : 80;
+        const ly = fx && Number.isFinite(fx.y) ? fx.y : 110;
+        to = { x: rect.left - sRect.left + (lx / VIEW.w) * rect.width, y: rect.top - sRect.top + (ly / VIEW.h) * rect.height };
+      }
+    } catch { /* ignore */ }
+    if (!to) to = { x: stageW / 2, y: stageH / 2 };
+    const from = melee
+      ? { x: stageW - 20, y: stageH / 2 } // 近战：从右侧中部飞入
+      : { x: stageW - 30, y: stageH - 26 }; // 远程：卡片右下角（枪口）
+    setShots((prev) => [...prev, { id, propId: prop.id, icon: prop.icon, from, to, melee }]);
+    // 子弹到达瞬间触发受击表现
+    setTimeout(() => { applyImpact(part, prop, fx); }, TRAVEL);
+    // 飞行体移除（与受击表现错开，避免闪退），多 shot 各自独立
+    setTimeout(() => { setShots((prev) => prev.filter((s) => s.id !== id)); }, TRAVEL + 120);
+
     const encTarget = await encryptText(await getRoomKey(room), target);
     supabase.from('effigy_hits').insert({ room_code: room, target: encTarget, part, prop: prop.id }).then(() => refresh());
   }
@@ -819,7 +919,11 @@ export default function HitEffigy({ room }) {
         </div>
 
         {/* 舞台：纸人为主，两侧刑具架 */}
-        <div className="card mb-3">
+        <div className="card mb-3 relative" ref={stageRef}>
+          {/* 武器/子弹飞行 overlay：绝对定位覆盖舞台卡片，pointer-events:none 不挡点击（点击层仍在 SVG 内可点） */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 15 }}>
+            {shots.map((s) => <WeaponShot key={s.id} shot={s} />)}
+          </div>
           <div className={`relative flex items-center justify-center gap-1 sm:gap-3 py-2 ${shaking ? 'animate-shake' : ''}`}>
             {/* 左侧刑具架 */}
             <div className="hidden sm:flex flex-col items-center gap-1 w-10 shrink-0">
@@ -835,17 +939,34 @@ export default function HitEffigy({ room }) {
             </div>
 
             {/* 纸人 */}
-            <div className="shrink-0">
+            <div className="shrink-0" style={{ perspective: '600px' }}>
               <svg ref={svgRef} width="150" height="206" viewBox="0 0 160 220" className="drop-shadow select-none">
+                <defs>
+                  <radialGradient id="effSheen" cx="35%" cy="28%" r="78%">
+                    <stop offset="0%" stopColor="#ffffff" stopOpacity="0.55" />
+                    <stop offset="55%" stopColor="#ffffff" stopOpacity="0.10" />
+                    <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+                  </radialGradient>
+                </defs>
+                {/* 落地阴影：受击时压扁增强“砸下去”感（在身体组之前、更底层） */}
+                <ellipse cx="80" cy="212" rx={lurch ? 26 : 34} ry="6" fill="#000" opacity={lurch ? 0.2 : 0.12} />
+                {/* lurch：受击 3D 前倾后仰（外层 g，CSS 3D transform；perspective 在父容器 .shrink-0 上） */}
+                <g style={{ transition: 'transform .12s ease-out', transform: lurch ? 'rotateX(14deg) translateY(4px)' : 'none', transformOrigin: '50% 100%', transformBox: 'view-box' }}>
                 <g transform={st.down ? 'rotate(-18 80 120)' : ''}>
-              {/* 四肢（可摆动） */}
+              {/* 四肢（可摆动，末端圆头） */}
               {(() => { const [a, b, c, d] = limbLine('armL'); return <line x1={a} y1={b} x2={c} y2={d} stroke="#e7d8a8" strokeWidth="6" strokeLinecap="round" />; })()}
               {(() => { const [a, b, c, d] = limbLine('armR'); return <line x1={a} y1={b} x2={c} y2={d} stroke="#e7d8a8" strokeWidth="6" strokeLinecap="round" />; })()}
               {(() => { const [a, b, c, d] = limbLine('legL'); return <line x1={a} y1={b} x2={c} y2={d} stroke="#e7d8a8" strokeWidth="6" strokeLinecap="round" />; })()}
               {(() => { const [a, b, c, d] = limbLine('legR'); return <line x1={a} y1={b} x2={c} y2={d} stroke="#e7d8a8" strokeWidth="6" strokeLinecap="round" />; })()}
-              {/* 身体 / 头 */}
+              {/* 身体 / 头（伪立体：先画向右下偏移的深色背板挤出体积，再画亮面 + 高光） */}
+              <rect x="54" y="74" width="60" height="110" rx="14" fill="#d9c79a" />
               <rect x="50" y="70" width="60" height="110" rx="14" fill={marks ? marks.bodyFill : '#fdf6e3'} stroke="#e7d8a8" strokeWidth="2" />
+              <rect x="50" y="70" width="60" height="110" rx="14" fill="url(#effSheen)" />
+              <ellipse cx="66" cy="90" rx="9" ry="15" fill="#fff" opacity="0.30" />
+              <circle cx="84" cy="49" r="28" fill="#d9c79a" />
               <circle cx="80" cy="45" r="28" fill={marks ? marks.bodyFill : '#fdf6e3'} stroke="#e7d8a8" strokeWidth="2" />
+              <circle cx="80" cy="45" r="28" fill="url(#effSheen)" />
+              <circle cx="74" cy="38" r="6" fill="#fff" opacity="0.40" />
               {st.down ? (
                 <g stroke="#7f1d1d" strokeWidth="2">
                   <line x1="66" y1="38" x2="74" y2="46" /><line x1="74" y1="38" x2="66" y2="46" />
@@ -873,6 +994,7 @@ export default function HitEffigy({ room }) {
                 <ellipse cx="89" cy="50" rx="2.5" ry="4"><animate attributeName="cy" from="50" to="66" dur="1.2s" begin="0.6s" repeatCount="indefinite" /><animate attributeName="opacity" from="0.9" to="0" dur="1.2s" begin="0.6s" repeatCount="indefinite" /></ellipse>
               </g>)}
               {/* 打击点实时特效将移到 svg root 空间（见下方），此处仅闭合身体组 */}
+            </g>
             </g>
             {bubble && (<g><rect x="112" y="14" width="44" height="22" rx="8" fill="#fff" stroke="#fda4af" /><text x="134" y="29" textAnchor="middle" fontSize="13" fill="#e11d48" fontWeight="bold">{bubble}</text></g>)}
             {/* 点击层：部位拆细，点哪打哪；首个 rect 为兜底大区，小人范围内点任何位置都按「最近部位」命中，杜绝死区。
