@@ -48,6 +48,33 @@ export async function getRoomKey(roomCode) {
   return importKey(k);
 }
 
+// 返回房间密钥的 b64url 字符串（用于放入邀请链接的 #k= 片段）。
+// - 有本机存储的密钥：直接返回（与加密时使用的密钥一致）
+// - 新格式房间（含 '-'）无存储：生成并存储后返回（与 getRoomKey 行为一致）
+// - 老房间（不含 '-'）：返回 ''（明文，不加密，保持向后兼容）
+// 注意：保持 getRoomKey 的内部逻辑不变，本函数仅负责产出可放入 URL 的字符串。
+export async function ensureRoomKeyB64(roomCode) {
+  if (!roomCode || !roomCode.includes('-')) return '';
+  try {
+    const stored = window.localStorage.getItem(KEY_PREFIX + roomCode);
+    if (stored) return stored;
+  } catch { /* ignore */ }
+  // 尝试从分享链接的 #k= 片段导入（joiner 用）
+  try {
+    const m = /[#&]k=([^&]+)/.exec(window.location.hash || '');
+    if (m) {
+      const k = decodeURIComponent(m[1]);
+      window.localStorage.setItem(KEY_PREFIX + roomCode, k);
+      return k;
+    }
+  } catch { /* ignore */ }
+  // 本房间尚无密钥 → 生成一把并存储
+  const raw = crypto.getRandomValues(new Uint8Array(32));
+  const k = bytesToB64url(raw);
+  try { window.localStorage.setItem(KEY_PREFIX + roomCode, k); } catch { /* ignore */ }
+  return k;
+}
+
 export async function encryptText(key, text) {
   if (!key || text == null) return text;
   const iv = crypto.getRandomValues(new Uint8Array(12));

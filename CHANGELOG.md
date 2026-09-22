@@ -2,6 +2,13 @@
 
 本项目遵循语义化版本（MAJOR.MINOR.PATCH）。日期为约略记录。
 
+## [1.3.2] — 2026-09-22 · 线上 5 项 Bug 修复
+- **问题1｜通缉墙/打击榜满屏 `enc:xxxx`**：`HitEffigy.jsx` 首屏 `load()` 之前不解密，导致按密文分组、每条各 1 下。新增 `fetchDecryptedRows()` 统一供 `load()` 与 `refresh()` 解密；无法解密的历史密文（仍为 `enc:` 前缀）全部归并为常量 `UNKNOWN_TARGET = '❓未知对象'` 一条，自动选中优先非「未知」对象，且对伪对象禁止打击。
+- **问题1/2｜邀请链接不带房间钥匙**：`RoomBar.jsx` 的 `inviteLink` 改为异步 state，`useEffect([room])` 内通过 `crypto.js` 新增的 `ensureRoomKeyB64()` 取得钥匙，链接格式升级为 `?room=xxx#k=yyy`（hash 在 query 之后）。同事点链接即可拿到钥匙、能解密也能被正确解密；微信清 localStorage 后凭链接可恢复房间。
+- **问题2｜房间忽然消失**：`App.jsx` 初始化时若「非 URL 进房 且 无当前房间 且 列表为空」判定为 `freshStart`，页面顶部显示可关闭提示条引导用邀请链接回到原房间（房间仍静默新建，不白屏）。
+- **问题5｜连打计数滞后**：`infoFor()` 的 total 改为 `Math.max(服务器聚合, 本机乐观计数)`，连打即时 +1；`refresh()` 成功后对齐本地计数（云端被清过时以云端为准，避免虚高永久驻留）。
+- **问题3/4｜纸条只能贴一张 / 太小 / 不可爱**：纸条存储由单条字符串改为 JSON 数组（最新在前，最多 6 张，兼容旧字符串），新增 `src/lib/notes.js` 的 `getNotes/addNote/clearNotes` 供 `HitEffigy.jsx` 与 `App.jsx` 共用（同内容去重）；贴纸条改为追加并提示「已贴上第 N 张」。纸人身上展示最新 3 张，错落旋转摆放，便签加大到 64×42、字号 8.5px；SVG 与 canvas（含战果图）统一粉/薄荷/奶油黄轮换、和纸胶带 + 📌图钉 + 圆角旋转的可爱样式。`clearCurrent`/`clearAll` 同步清空纸条数组。
+
 ## [1.3.1] — 2026-09-21 · 工程规范化
 - 新增 `README.md` / `LICENSE` / `CHANGELOG.md`
 - 项目整体迁移至 `D:\99-AI-application\ventbox`

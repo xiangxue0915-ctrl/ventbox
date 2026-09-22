@@ -2,10 +2,24 @@ import { useEffect, useRef, useState } from 'react';
 import { get, set } from '../lib/storage.js';
 import { supabase } from '../lib/supabase.js';
 import { getRoomKey, encryptText, decryptText } from '../lib/crypto.js';
+import { getNotes, addNote, clearNotes } from '../lib/notes.js';
 
 const HITS_KEY = 'effigy.hits'; // 离线回退：{ 对象: 总次数 }
 const DETAIL_KEY = 'effigy.detail'; // 离线回退：{ 对象: { parts, pp } }
-const NOTE_KEY = 'effigy.note'; // 骂Ta纸条：按 房间+对象 隔离，仅存本机
+const UNKNOWN_TARGET = '❓未知对象'; // 无法解密的历史密文记录统一归并到这儿
+const NOTE_MAX_SHOWN = 3; // 纸人身上最多同时展示的纸条数
+// 可爱便签配色：粉 / 薄荷 / 奶油黄 按索引轮换
+const NOTE_STYLES = [
+  { fill: '#ffe1ec', stroke: '#f7a8c4', text: '#9d3b63', tape: '#fbcfe8' },
+  { fill: '#dcf5ea', stroke: '#86dcc0', text: '#1f7a5e', tape: '#bbf0da' },
+  { fill: '#fff6cf', stroke: '#f0d27a', text: '#8a6516', tape: '#fde68a' },
+];
+// 纸人身上 3 张纸条的错落摆放：x,y 为左上角，rot 为旋转角（度）
+const NOTE_SLOTS = [
+  { x: 90, y: 100, rot: -5 },
+  { x: 94, y: 140, rot: 5 },
+  { x: 90, y: 178, rot: -4 },
+];
 
 const VIEW = { w: 160, h: 220 };
 const CARD = { w: 320, scale: 2, ox: (320 - 160 * 2) / 2, oy: 78 };
@@ -261,6 +275,68 @@ function noteLines(s) {
   return out;
 }
 
+// 从数据库拉取并按本机钥匙解密；统一供 load() 与 refresh() 使用（修「首屏满屏 enc:」）。
+// 解密后仍带 enc: 前缀 = 本机没有对应钥匙的历史密文 → 全部归并为 UNKNOWN_TARGET 一条。
+async function fetchDecryptedRows(room) {
+  const { data, error } = await supabase.from('effigy_hits').select('*').eq('room_code', room);
+  if (error || !data) return null; // null = 拉取失败，调用方保留原数据
+  const key = await getRoomKey(room);
+  const rows = await Promise.all(
+    data.map(async (r) => {
+      let t = await decryptText(key, r.target);
+      if (typeof t === 'string' && t.startsWith('enc:')) t = UNKNOWN_TARGET;
+      return { ...r, target: t };
+    })
+  );
+  return rows;
+}
+
+// 单张可爱便签（SVG 主舞台用）。x,y 为左上角，rot 为旋转角（度）；样式按索引轮换
+function NoteSticker({ x, y, rot, text, idx }) {
+  const s = NOTE_STYLES[idx % NOTE_STYLES.length];
+  const lines = noteLines(text);
+  return (
+    <g transform={`rotate(${rot} ${x + 32} ${y + 21})`}>
+      {/* 和纸胶带 */}
+      <rect x={x + 14} y={y - 4} width="36" height="10" rx="3" fill={s.tape} opacity="0.85" transform={`rotate(-3 ${x + 32} ${y + 1})`} />
+      {/* 便签纸 */}
+      <rect x={x} y={y} width="64" height="42" rx="7" fill={s.fill} stroke={s.stroke} strokeWidth="1.2" />
+      {/* 图钉 */}
+      <text x={x + 6} y={y + 14} fontSize="11">📌</text>
+      {lines.map((ln, i) => (
+        <text key={i} x={x + 33} y={y + 17 + i * 9} textAnchor="middle" fontSize="8.5" fill={s.text}>{ln}</text>
+      ))}
+    </g>
+  );
+}
+
+// 单张可爱便签（canvas 战果图用，参数同 NoteSticker；s 为 CARD.scale）
+function drawNoteSticker(ctx, slot, text, idx, s) {
+  const ox = CARD.ox, oy = CARD.oy;
+  const style = NOTE_STYLES[idx % NOTE_STYLES.length];
+  const w = 64 * s, h = 42 * s, hw = w / 2, hh = h / 2;
+  ctx.save();
+  // 与 SVG 主舞台保持同一 viewBox 坐标系（drawEffigy 已 translate(ox,oy)，故此处再加一次 ox/oy 抵消双偏移）
+  ctx.translate(ox + slot.x * s + 32 * s, oy + slot.y * s + 21 * s);
+  ctx.rotate((slot.rot * Math.PI) / 180);
+  // 和纸胶带
+  ctx.save();
+  ctx.rotate((-3 * Math.PI) / 180);
+  ctx.fillStyle = style.tape; ctx.globalAlpha = 0.85;
+  roundRect(ctx, -18 * s, -hh - 4 * s, 36 * s, 10 * s, 3 * s); ctx.fill();
+  ctx.globalAlpha = 1; ctx.restore();
+  // 便签纸
+  ctx.fillStyle = style.fill; ctx.strokeStyle = style.stroke; ctx.lineWidth = 1.2 * s;
+  roundRect(ctx, -hw, -hh, w, h, 7 * s); ctx.fill(); ctx.stroke();
+  // 图钉
+  ctx.font = `${11 * s}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('📌', -hw + 6 * s, -hh + 14 * s);
+  // 文字
+  ctx.fillStyle = style.text; ctx.font = `${8.5 * s}px sans-serif`;
+  noteLines(text).forEach((ln, li) => ctx.fillText(ln, 0, -hh + 17 * s + li * 9 * s));
+  ctx.restore();
+}
+
 // 道具痕迹在 SVG 上的形状（主舞台与通缉墙缩略图共用，保证上下一致）
 function markShape(m, i) {
   switch (m.prop) {
@@ -303,7 +379,7 @@ function MiniEffigy({ target, total, marks, active, onClick }) {
 }
 
 // 在 canvas 上绘制纸人（含四肢摆动 pose、伤痕、吐血、眼泪、绷带、X眼、封条）
-function drawEffigy(ctx, { target, total, marks, mouth, down, crying, pose = {}, note = '' }) {
+function drawEffigy(ctx, { target, total, marks, mouth, down, crying, pose = {}, notes = [] }) {
   const s = CARD.scale, ox = CARD.ox, oy = CARD.oy;
   const P = (x, y) => [ox + x * s, oy + y * s];
   ctx.save();
@@ -350,15 +426,9 @@ function drawEffigy(ctx, { target, total, marks, mouth, down, crying, pose = {},
     ctx.fillStyle = '#e11d48'; ctx.font = `bold ${13 * s}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(target.length > 6 ? target.slice(0, 6) + '…' : target, sx + 28 * s, sy + 14 * s);
   }
-  // 骂Ta纸条（与页面 SVG 同款样式）
-  if (note) {
-    const [nx, ny] = P(102, 132);
-    ctx.save(); ctx.translate(nx + 26 * s, ny + 19 * s); ctx.rotate((6 * Math.PI) / 180);
-    ctx.fillStyle = '#fef9c3'; ctx.strokeStyle = '#eab308'; ctx.lineWidth = 1.5 * s;
-    roundRect(ctx, -26 * s, -19 * s, 52 * s, 38 * s, 4 * s); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#854d0e'; ctx.font = `${7.5 * s}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    noteLines(note).forEach((line, li) => ctx.fillText(line, 0, (-19 + 9 + li * 9) * s));
-    ctx.restore();
+  // 骂Ta纸条（与页面 SVG 同款样式）：最多展示最新 3 张，错落旋转摆放
+  if (notes && notes.length) {
+    notes.slice(0, NOTE_MAX_SHOWN).forEach((nt, i) => drawNoteSticker(ctx, NOTE_SLOTS[i], nt, i, s));
   }
   // 淤青
   marks.bruises.forEach((b) => { const p = P(b.x, b.y); ctx.fillStyle = 'rgba(168,85,247,0.32)'; ctx.beginPath(); ctx.arc(p[0], p[1], b.r * s, 0, Math.PI * 2); ctx.fill(); });
@@ -425,7 +495,7 @@ export default function HitEffigy({ room }) {
   const [nameHint, setNameHint] = useState('');
   const [combo, setCombo] = useState(0);
   const [noteInput, setNoteInput] = useState(''); // 纸条输入
-  const [note, setNote] = useState(''); // 当前对象身上的纸条内容
+  const [notes, setNotes] = useState([]); // 当前对象身上的纸条数组（最新在前）
   const [cardImg, setCardImg] = useState('');
   const [hitFx, setHitFx] = useState(null); // { x, y, id }
   const [floaters, setFloaters] = useState([]); // 飘字：{ id, text, side, top }
@@ -439,18 +509,20 @@ export default function HitEffigy({ room }) {
   useEffect(() => {
     let alive = true;
     async function load() {
-      const { data, error } = await supabase.from('effigy_hits').select('*').eq('room_code', room);
-      if (alive) {
-        if (!error) {
-          setRows(data || []);
-          // 进入已有记录的房间时自动选中第一个对象，免得白屏要重新贴名
-          if (data && data.length) {
-            const first = Object.keys(aggregate(data))[0];
-            setTarget((t) => t || first);
-          }
+      const rows = await fetchDecryptedRows(room);
+      if (!alive) return;
+      if (rows) {
+        setRows(rows);
+        // 进入已有记录的房间时自动选中第一个对象，免得白屏要重新贴名
+        // 优先选非「未知对象」的条目，避免把历史密文（enc:...）当成当前对象
+        if (rows.length) {
+          const agg = aggregate(rows);
+          const names = Object.keys(agg);
+          const pick = names.find((n) => n !== UNKNOWN_TARGET) || names[0] || '';
+          setTarget((t) => t || pick);
         }
-        setLoaded(true);
       }
+      setLoaded(true);
     }
     load();
     const ch = supabase
@@ -472,66 +544,62 @@ export default function HitEffigy({ room }) {
   // 纸条按 房间+对象 隔离：切对象自动换纸条；同时把「当前对象」存起来，
   // 这样用户在别的页签（如 AI 聊天）点「📌 贴到小人身上」也能贴对人
   useEffect(() => {
-    setNote(target ? get(NOTE_KEY + ':' + room + ':' + target, '') : '');
+    setNotes(target ? getNotes(room, target) : []);
     setNoteInput('');
     if (target) set('effigy.currentTarget:' + room, target);
     // eslint-disable-next-line
   }, [room, target]);
 
-  // 全局层（App）贴好纸条后通知这里即时刷新
+  // 全局层（App）贴好纸条后通知这里即时刷新（App 是唯一写纸条的地方，这里只刷新显示）
   useEffect(() => {
     function onApplied(e) {
       const d = (e && e.detail) || {};
       if (d.target && d.target === target) {
-        setNote(String(d.text || '').slice(0, 30));
-        setNameHint(`📌 已把一句话贴到「${d.target}」身上`);
+        setNotes(getNotes(room, target));
+        setNameHint(`📌 已把一句话贴到「${d.target}」身上（第 ${getNotes(room, target).length} 张）`);
         setTimeout(() => setNameHint(''), 2600);
       }
     }
     window.addEventListener('ventbox:note-applied', onApplied);
     return () => window.removeEventListener('ventbox:note-applied', onApplied);
-  }, [target]);
-
-  // 接收 AI 搭子发来的「贴到小人身上」事件
-  useEffect(() => {
-    function onPin(e) {
-      const text = String(e.detail || '').trim().slice(0, 30);
-      if (!text) return;
-      if (!target) {
-        setNameHint('先在上方给对象「贴上去」一个名字，再回来贴纸条');
-        setTimeout(() => setNameHint(''), 3000);
-        return;
-      }
-      setNote(text);
-      set(NOTE_KEY + ':' + room + ':' + target, text);
-      setNameHint(`📌 已把一句话贴到「${target}」身上`);
-      setTimeout(() => setNameHint(''), 3000);
-    }
-    window.addEventListener('ventbox:pin-note', onPin);
-    return () => window.removeEventListener('ventbox:pin-note', onPin);
-  }, [room, target]);
+  }, [target, room]);
 
   function pasteNote() {
     const n = noteInput.trim();
     if (!n || !target) return;
-    setNote(n); setNoteInput('');
-    set(NOTE_KEY + ':' + room + ':' + target, n);
+    const before = getNotes(room, target).length;
+    const arr = addNote(room, target, n);
+    setNotes(arr); setNoteInput('');
+    if (arr.length > before) setNameHint(`📌 已贴上第 ${arr.length} 张纸条`);
+    else setNameHint('📌 这条已经贴过啦');
+    setTimeout(() => setNameHint(''), 2600);
   }
 
   async function refresh() {
-    const key = await getRoomKey(room);
-    const { data, error } = await supabase.from('effigy_hits').select('*').eq('room_code', room);
-    if (!error && data) {
-      const dec = await Promise.all(data.map(async (r) => ({ ...r, target: await decryptText(key, r.target) })));
-      setRows(dec);
+    const rows = await fetchDecryptedRows(room);
+    if (!rows) return;
+    setRows(rows);
+    // 对齐本地乐观计数：若云端某对象总数比本机少（云端被清过部分数据），
+    // 以云端为准重置本机，避免「虚高」永久驻留
+    const agg = aggregate(rows);
+    const nextLocal = { ...localHits };
+    let changed = false;
+    for (const t of Object.keys(agg)) {
+      const sTotal = agg[t].total;
+      if (sTotal > 0 && sTotal < (nextLocal[t] || 0)) { nextLocal[t] = sTotal; changed = true; }
     }
+    if (changed) { setLocalHits(nextLocal); set(hitsKey, nextLocal); }
   }
 
   const shared = loaded ? aggregate(rows) : null;
   const names = Array.from(new Set([...(shared ? Object.keys(shared) : []), ...Object.keys(localHits)]));
+  // 计数即时（修「连打计数滞后」）：total 取 服务器聚合 与 本机乐观 的较大值
   function infoFor(t) {
-    if (shared && shared[t]) return { total: shared[t].total, detail: shared[t] };
-    return { total: localHits[t] || 0, detail: localDetail[t] || { parts: {}, pp: {} } };
+    const sh = shared && shared[t];
+    const sTotal = sh ? sh.total : 0;
+    const total = Math.max(sTotal, localHits[t] || 0);
+    const detail = sh ? sh : (localDetail[t] || { parts: {}, pp: {} });
+    return { total, detail };
   }
 
   const cur = target ? infoFor(target) : null;
@@ -573,6 +641,12 @@ export default function HitEffigy({ room }) {
   // 依据「点击部位」推断：用鼠标实际坐标定位特效（100% 对得上）
   async function doHit(part, fx) {
     if (!target) return;
+    // 「未知对象」是丢失钥匙的历史密文归并出的伪对象，不允许打击，避免把密文再加密一层写库
+    if (target === UNKNOWN_TARGET) {
+      setNameHint('❓未知对象是丢失钥匙的历史密文，无法打击，请换一个对象');
+      setTimeout(() => setNameHint(''), 3000);
+      return;
+    }
     const prop = PROPS.find((x) => x.id === activeProp) || PROPS[0];
     // 离线乐观更新
     const nextHits = { ...localHits, [target]: (localHits[target] || 0) + 1 };
@@ -632,6 +706,11 @@ export default function HitEffigy({ room }) {
 
   async function clearCurrent() {
     if (!target) return;
+    if (target === UNKNOWN_TARGET) {
+      setNameHint('❓未知对象无法单独清空，可在右侧「清空全部」移除历史记录');
+      setTimeout(() => setNameHint(''), 3000);
+      return;
+    }
     const nh = { ...localHits }; const nd = { ...localDetail };
     delete nh[target]; delete nd[target];
     setLocalHits(nh); setLocalDetail(nd); set(hitsKey, nh); set(detailKey, nd);
@@ -639,17 +718,17 @@ export default function HitEffigy({ room }) {
     const enc = await encryptText(await getRoomKey(room), target);
     await supabase.from('effigy_hits').delete().eq('room_code', room).eq('target', enc);
     await supabase.from('effigy_hits').delete().eq('room_code', room).eq('target', target);
+    clearNotes(room, target);
     setRows([]); setLoaded(false); refresh().then(() => setLoaded(true));
-    setTarget(''); setRelief(''); setCardImg(''); setNote('');
-    set(NOTE_KEY + ':' + room + ':' + target, '');
+    setTarget(''); setRelief(''); setCardImg(''); setNotes([]);
   }
 
   async function clearAll() {
     if (!window.confirm('确定清空本房间所有打击记录？')) return;
     setLocalHits({}); setLocalDetail({}); set(hitsKey, {}); set(detailKey, {});
-    names.forEach((n) => set(NOTE_KEY + ':' + room + ':' + n, ''));
+    names.forEach((n) => clearNotes(room, n));
     await supabase.from('effigy_hits').delete().eq('room_code', room);
-    setRows([]); setTarget(''); setRelief(''); setCardImg(''); setNote('');
+    setRows([]); setTarget(''); setRelief(''); setCardImg(''); setNotes([]);
   }
 
   // 战果图：复用同一套绘制函数 + 同一 pose + 道具统计，与画面完全一致
@@ -668,7 +747,7 @@ export default function HitEffigy({ room }) {
     ctx.fillStyle = '#1f2937'; ctx.font = 'bold 18px sans-serif';
     ctx.fillText('对象：' + (target.length > 10 ? target.slice(0, 10) + '…' : target), W / 2, 56);
     // 纸人
-    drawEffigy(ctx, { target, total, marks, mouth: null, down: st.down, crying: st.crying, pose, note });
+    drawEffigy(ctx, { target, total, marks, mouth: null, down: st.down, crying: st.crying, pose, notes });
     // 统计区
     let y = CARD.oy + VIEW.h * CARD.scale + 28;
     ctx.textAlign = 'left';
@@ -776,13 +855,10 @@ export default function HitEffigy({ room }) {
               {mouthShape}
               {target && (<g><rect x="52" y="105" width="56" height="26" rx="6" fill="#fff1f2" stroke="#fda4af" strokeWidth="1.5" />
                 <text x="80" y="122" textAnchor="middle" fontSize="13" fill="#e11d48" fontWeight="bold">{target.length > 6 ? target.slice(0, 6) + '…' : target}</text></g>)}
-              {/* 骂Ta纸条：钉在身上，随瘫倒一起旋转 */}
-              {note && (<g transform="rotate(6 128 150)">
-                <rect x="102" y="132" width="52" height="38" rx="4" fill="#fef9c3" stroke="#eab308" strokeWidth="1.5" />
-                {noteLines(note).map((line, li) => (
-                  <text key={li} x="128" y={141 + li * 9} textAnchor="middle" fontSize="7.5" fill="#854d0e">{line}</text>
-                ))}
-              </g>)}
+              {/* 骂Ta纸条：纸人身上展示最新的 3 张，错落旋转摆放，随瘫倒一起旋转 */}
+              {notes.slice(0, NOTE_MAX_SHOWN).map((nt, i) => (
+                <NoteSticker key={i} x={NOTE_SLOTS[i].x} y={NOTE_SLOTS[i].y} rot={NOTE_SLOTS[i].rot} text={nt} idx={i} />
+              ))}
               {marks && marks.bruises.map((b, i) => (<circle key={'b' + i} cx={b.x} cy={b.y} r={b.r} fill="#a855f7" opacity="0.32" />))}
               {marks && marks.marks.map(markShape)}
               {marks && marks.blood.map((b, i) => (
@@ -866,7 +942,7 @@ export default function HitEffigy({ room }) {
             {combo > 1 && <p className="text-sm font-bold text-amber-500 animate-pop">🔥 连击 x{combo}！</p>}
             <div className="flex gap-2 ml-auto">
               <button className="text-base px-6 py-2 rounded-2xl shadow-lg shadow-red-200 text-white bg-red-500 hover:bg-red-600 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed font-semibold"
-                onClick={() => doHit(PART_IDS[Math.floor(Math.random() * PART_IDS.length)])} disabled={!target}>
+                onClick={() => doHit(PART_IDS[Math.floor(Math.random() * PART_IDS.length)])} disabled={!target || target === UNKNOWN_TARGET}>
                 {PROPS.find((p) => p.id === activeProp)?.icon} 打！
               </button>
               <button className="btn-ghost" onClick={generateCard} disabled={!target}>🖼️ 战果图</button>
@@ -896,6 +972,9 @@ export default function HitEffigy({ room }) {
             })}
           </div>
           <p className="text-[11px] text-slate-400 mt-2">点任意一张「通缉照」就能把 Ta 请上台挨打；当前台上的人有高亮边框</p>
+          {names.includes(UNKNOWN_TARGET) && (
+            <p className="text-[11px] text-slate-400 mt-1">❓未知对象 = 曾用丢失钥匙加密的历史记录，无法显示真名，不能打击</p>
+          )}
         </div>
       )}
 

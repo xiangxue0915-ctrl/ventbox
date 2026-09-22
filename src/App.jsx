@@ -4,6 +4,7 @@ import AiCompanion from './components/AiCompanion.jsx';
 import Onboarding from './components/Onboarding.jsx';
 import { randomAnon } from './lib/anon.js';
 import { getRoomList, getCurrentRoom, genRoomCode, addRoom } from './lib/rooms.js';
+import { addNote } from './lib/notes.js';
 
 // 重 Tab 按需加载，减小首屏 bundle（打小人为首屏默认，保持静态导入）
 const TreeHole = lazy(() => import('./components/TreeHole.jsx'));
@@ -78,6 +79,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-rose-50 text-slate-800">
+      {/* 房间丢失恢复提示：本机记录被微信/浏览器清理、被迫新建房间时显示 */}
+      {freshStart && (
+        <div role="alert" className="bg-amber-50 border-b border-amber-200 text-amber-800 text-sm px-4 py-2 flex items-start gap-2">
+          <span className="shrink-0">⚠️</span>
+          <span className="flex-1 leading-relaxed">没找到上次的房间（本机记录可能被微信清理）。点开同事之前发你的「邀请链接」即可回到原房间（链接含房间钥匙）；或在房间菜单输入房间码重新加入。</span>
+          <button onClick={() => setFreshStart(false)} className="shrink-0 text-amber-500 hover:text-amber-700 font-bold text-lg leading-none" aria-label="关闭提示">×</button>
+        </div>
+      )}
       {/* ===== 顶栏：所有全局状态一行收纳 ===== */}
       <header className="sticky top-0 z-30 backdrop-blur bg-white/80 border-b border-rose-100">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">

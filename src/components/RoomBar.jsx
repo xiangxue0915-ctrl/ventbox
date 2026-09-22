@@ -93,7 +93,7 @@ export default function RoomBar({ room, onChange }) {
   function copyText(text, msg) {
     navigator.clipboard?.writeText(text).then(() => flash(msg));
   }
-  const inviteLink = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(room)}`;
+  // inviteLink 已在上方 useEffect 中随房间密钥异步计算（含 #k= 房间钥匙）
 
   return (
     <div className="flex items-center gap-2 shrink-0">
@@ -183,6 +183,9 @@ export default function RoomBar({ room, onChange }) {
 
           <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
             多人玩的关键：<span className="text-rose-500 font-semibold">大家在同一房间</span>。发「房间码」或「邀请链接」给同事即可，点 🗑️ 才真正销毁。
+          </p>
+          <p className="text-[11px] text-amber-500 mt-2 leading-relaxed">
+            💡 口头告知房间码看不到加密内容；邀请同事请用上方「复制链接」（链接内含房间钥匙）。
           </p>
         </div>
       )}
