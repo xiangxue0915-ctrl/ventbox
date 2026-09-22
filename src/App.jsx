@@ -59,8 +59,9 @@ export default function App() {
         setActive('effigy');
         return;
       }
-      try { localStorage.setItem('effigy.note:' + room + ':' + tgt, text); } catch { /* ignore */ }
-      setPinToast(`📌 已贴到「${tgt}」身上`);
+      // 全局层统一写纸条（数组化、去重），再通知打小人页即时刷新
+      const arr = addNote(room, tgt, text);
+      setPinToast(`📌 已贴到「${tgt}」身上（第 ${arr.length} 张）`);
       setActive('effigy');
       // 若打小人页已经挂载，通知它立刻刷新纸条
       window.dispatchEvent(new CustomEvent('ventbox:note-applied', { detail: { target: tgt, text } }));
